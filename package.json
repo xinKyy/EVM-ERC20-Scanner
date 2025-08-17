@@ -1,0 +1,31 @@
+{
+  "name": "bsc-usdt-monitor",
+  "version": "1.0.0",
+  "description": "BSC链上USDT充值检测服务",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "node test-api.js",
+    "setup": "./scripts/start.sh",
+    "dev:start": "./scripts/start.sh dev",
+    "lint": "echo 'Linting not configured'",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "web3": "^4.0.0",
+    "mongoose": "^8.0.0",
+    "express": "^4.18.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/express": "^4.17.0",
+    "@types/cors": "^2.8.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0"
+  }
+}
