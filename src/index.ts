@@ -1,5 +1,5 @@
 import { App } from './app';
-import { scannerService } from './routes/scanner';
+import { scannerService, withdrawalService } from './routes/scanner';
 
 async function bootstrap() {
   const app = new App();
@@ -32,15 +32,20 @@ async function bootstrap() {
     // 启动应用
     await app.listen();
     
-    // 等待一段时间后自动启动扫描服务
-    console.log('\n⏳ 5秒后自动启动扫描服务...');
+    // 等待一段时间后自动启动服务
+    console.log('\n⏳ 5秒后自动启动服务...');
     setTimeout(async () => {
       try {
+        // 启动扫描服务
         await scannerService.startScanning();
         console.log('✅ 扫描服务已自动启动');
+        
+        // 启动提现处理服务
+        await withdrawalService.startWithdrawalProcessor();
+        console.log('✅ 提现处理服务已启动');
       } catch (error) {
-        console.error('❌ 自动启动扫描服务失败:', error);
-        console.log('💡 您可以手动调用 POST /api/scanner/start 启动扫描');
+        console.error('❌ 自动启动服务失败:', error);
+        console.log('💡 您可以手动调用相关API启动服务');
       }
     }, 5000);
 

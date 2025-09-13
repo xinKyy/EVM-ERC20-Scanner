@@ -4,7 +4,7 @@ import { AddressController } from '../controllers/AddressController';
 const router = Router();
 const addressController = new AddressController();
 
-// 订阅地址
+// 订阅地址 (保留兼容性，但建议使用wallet接口)
 router.post('/subscribe', addressController.subscribe);
 
 // 取消订阅地址

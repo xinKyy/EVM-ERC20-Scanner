@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { ScannerController } from '../controllers/ScannerController';
 import { ScannerService } from '../services/ScannerService';
+import { WithdrawalService } from '../services/WithdrawalService';
 
 const router = Router();
 
 // 创建单例服务实例
 const scannerService = new ScannerService();
+const withdrawalService = new WithdrawalService();
 const scannerController = new ScannerController(scannerService);
 
 // 获取扫描状态
@@ -23,5 +25,5 @@ router.post('/manual-scan', scannerController.manualScan);
 // 重扫指定区块范围
 router.post('/rescan', scannerController.rescanBlocks);
 
-export { scannerService };
+export { scannerService, withdrawalService };
 export default router;

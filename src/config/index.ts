@@ -25,6 +25,24 @@ export interface Config {
   server: {
     port: number;
   };
+  wallets: {
+    collection: {
+      address: string;
+      privateKey: string;
+    };
+    gasFee: {
+      address: string;
+      privateKey: string;
+    };
+    withdrawal: {
+      address: string;
+      privateKey: string;
+    };
+  };
+  collection: {
+    threshold: string; // USDT数量阈值，如 "2000000000000000000" (2 USDT)
+    enabled: boolean;
+  };
   logLevel: string;
 }
 
@@ -50,6 +68,24 @@ export const config: Config = {
   },
   server: {
     port: parseInt(process.env.PORT || '3000'),
+  },
+  wallets: {
+    collection: {
+      address: process.env.COLLECTION_WALLET_ADDRESS || '',
+      privateKey: process.env.COLLECTION_WALLET_PRIVATE_KEY || '',
+    },
+    gasFee: {
+      address: process.env.GAS_FEE_WALLET_ADDRESS || '',
+      privateKey: process.env.GAS_FEE_WALLET_PRIVATE_KEY || '',
+    },
+    withdrawal: {
+      address: process.env.WITHDRAWAL_WALLET_ADDRESS || '',
+      privateKey: process.env.WITHDRAWAL_WALLET_PRIVATE_KEY || '',
+    },
+  },
+  collection: {
+    threshold: process.env.COLLECTION_THRESHOLD || '2000000000000000000', // 2 USDT
+    enabled: process.env.COLLECTION_ENABLED === 'true',
   },
   logLevel: process.env.LOG_LEVEL || 'info',
 };

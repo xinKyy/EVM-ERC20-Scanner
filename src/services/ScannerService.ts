@@ -2,6 +2,8 @@ import { BlockchainService, TransferEvent } from './BlockchainService';
 import { TransferService } from './TransferService';
 import { AddressService } from './AddressService';
 import { WebhookService } from './WebhookService';
+import { WalletService } from './WalletService';
+import { CollectionService } from './CollectionService';
 import { ScanState, IScanState } from '../models';
 import { config } from '../config';
 
@@ -10,6 +12,8 @@ export class ScannerService {
   private transferService: TransferService;
   private addressService: AddressService;
   private webhookService: WebhookService;
+  private walletService: WalletService;
+  private collectionService: CollectionService;
   private isScanning: boolean = false;
   private scanInterval: NodeJS.Timeout | null = null;
   private lastHealthCheck: Date = new Date();
@@ -19,6 +23,8 @@ export class ScannerService {
     this.transferService = new TransferService();
     this.addressService = new AddressService();
     this.webhookService = new WebhookService();
+    this.walletService = new WalletService();
+    this.collectionService = new CollectionService();
   }
 
   /**
@@ -53,6 +59,11 @@ export class ScannerService {
 
       // 开始确认处理循环
       this.startConfirmationLoop();
+
+      // 启动资金归集服务
+      if (config.collection.enabled) {
+        await this.collectionService.startAutoCollection();
+      }
 
     } catch (error) {
       console.error('启动扫描服务失败:', error);
@@ -225,15 +236,76 @@ export class ScannerService {
       // 获取所有to地址
       const toAddresses = [...new Set(events.map(event => event.toAddress))];
       
-      // 批量检查哪些地址已订阅
-      const subscribedAddresses = await this.addressService.getSubscribedAddresses(toAddresses);
+      // 同时检查订阅地址和用户钱包地址
+      const [subscribedAddresses, userWalletAddresses] = await Promise.all([
+        this.addressService.getSubscribedAddresses(toAddresses),
+        this.getUserWalletAddresses(toAddresses),
+      ]);
+      
+      // 合并两个地址集合
+      const allTargetAddresses = new Set([
+        ...subscribedAddresses,
+        ...userWalletAddresses,
+      ]);
       
       // 过滤出目标事件
-      return events.filter(event => subscribedAddresses.has(event.toAddress));
+      const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
+      
+      // 更新用户钱包余额
+      if (targetEvents.length > 0) {
+        await this.updateUserWalletBalances(targetEvents);
+      }
+      
+      return targetEvents;
       
     } catch (error) {
       console.error('过滤目标事件失败:', error);
       return [];
+    }
+  }
+
+  /**
+   * 获取用户钱包地址集合
+   */
+  private async getUserWalletAddresses(addresses: string[]): Promise<Set<string>> {
+    try {
+      const activeWalletAddresses = await this.walletService.getAllActiveWalletAddresses();
+      const addressSet = new Set(activeWalletAddresses);
+      
+      // 只返回在检查列表中的地址
+      return new Set(addresses.filter(addr => addressSet.has(addr)));
+    } catch (error) {
+      console.error('获取用户钱包地址失败:', error);
+      return new Set();
+    }
+  }
+
+  /**
+   * 更新用户钱包余额
+   */
+  private async updateUserWalletBalances(events: TransferEvent[]): Promise<void> {
+    try {
+      for (const event of events) {
+        const wallet = await this.walletService.getUserWalletByAddress(event.toAddress);
+        
+        if (wallet) {
+          // 计算新余额
+          const currentBalance = BigInt(wallet.balance || '0');
+          const receivedAmount = BigInt(event.amount);
+          const newBalance = currentBalance + receivedAmount;
+          
+          // 更新钱包余额
+          await this.walletService.updateWalletBalance(
+            event.toAddress,
+            newBalance.toString(),
+            event.amount
+          );
+          
+          console.log(`更新用户 ${wallet.userId} 钱包余额: +${this.blockchainService.formatUSDTAmount(event.amount)} USDT`);
+        }
+      }
+    } catch (error) {
+      console.error('更新用户钱包余额失败:', error);
     }
   }
 

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import addressRoutes from './address';
 import scannerRoutes from './scanner';
 import transferRoutes from './transfer';
+import walletRoutes from './wallet';
+import withdrawalRoutes from './withdrawal';
 
 const router = Router();
 
@@ -9,6 +11,8 @@ const router = Router();
 router.use('/address', addressRoutes);
 router.use('/scanner', scannerRoutes);
 router.use('/transfer', transferRoutes);
+router.use('/wallet', walletRoutes);
+router.use('/withdrawal', withdrawalRoutes);
 
 // 健康检查接口
 router.get('/health', (req, res) => {
@@ -32,15 +36,32 @@ router.get('/info', (req, res) => {
       features: [
         '支持配置RPC和ERC20Token地址',
         '使用MongoDB作为数据库',
-        '支持地址订阅和去重',
+        '用户钱包自动生成和管理',
         'USDT Transfer事件实时扫描',
         '6个区块确认机制',
+        '自动资金归集系统',
         'Webhook通知功能',
+        '提现系统',
         '漏块重扫机制',
       ],
       endpoints: {
+        wallet: {
+          create: 'POST /api/wallet/create',
+          getUserWallet: 'GET /api/wallet/user/:userId',
+          collect: 'POST /api/wallet/collect/:userId',
+          disable: 'POST /api/wallet/disable/:userId',
+          statistics: 'GET /api/wallet/statistics',
+          collectionStats: 'GET /api/wallet/collection/statistics',
+        },
+        withdrawal: {
+          create: 'POST /api/withdrawal/create',
+          records: 'GET /api/withdrawal/records',
+          statistics: 'GET /api/withdrawal/statistics',
+          walletInfo: 'GET /api/withdrawal/wallet/info',
+          retry: 'POST /api/withdrawal/retry/:withdrawalId',
+        },
         address: {
-          subscribe: 'POST /api/address/subscribe',
+          subscribe: 'POST /api/address/subscribe (兼容性)',
           unsubscribe: 'POST /api/address/unsubscribe',
           list: 'GET /api/address/list',
           check: 'GET /api/address/check/:address',
