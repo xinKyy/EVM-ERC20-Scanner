@@ -25,7 +25,7 @@ export class WalletService {
     try {
       // 检查用户是否已有钱包
       const existingWallet = await UserWallet.findOne({ userId });
-      
+
       if (existingWallet) {
         console.log(`用户 ${userId} 已有钱包地址: ${existingWallet.address}`);
         return {
@@ -85,9 +85,9 @@ export class WalletService {
    */
   public async getUserWalletByAddress(address: string): Promise<IUserWallet | null> {
     try {
-      return await UserWallet.findOne({ 
-        address: address.toLowerCase(), 
-        isActive: true 
+      return await UserWallet.findOne({
+        address: address.toLowerCase(),
+        isActive: true
       });
     } catch (error) {
       console.error('根据地址获取用户钱包失败:', error);
@@ -103,13 +103,13 @@ export class WalletService {
    * @returns 是否更新成功
    */
   public async updateWalletBalance(
-    address: string, 
-    newBalance: string, 
+    address: string,
+    newBalance: string,
     receivedAmount?: string
   ): Promise<boolean> {
     try {
-      const wallet = await UserWallet.findOne({ 
-        address: address.toLowerCase() 
+      const wallet = await UserWallet.findOne({
+        address: address.toLowerCase()
       });
 
       if (!wallet) {
@@ -146,13 +146,39 @@ export class WalletService {
    */
   public async getWalletsForCollection(threshold: string): Promise<IUserWallet[]> {
     try {
-      // 查找余额大于等于阈值的钱包
-      const wallets = await UserWallet.find({
+      // 获取所有活跃钱包
+      const allWallets = await UserWallet.find({
         isActive: true,
-        balance: { $gte: threshold },
-      }).sort({ balance: -1 }); // 按余额降序排列
+      });
 
-      return wallets;
+      // 在应用层进行数值比较（避免MongoDB字符串比较的问题）
+      const thresholdBigInt = BigInt(threshold);
+      const walletsToCollect = allWallets.filter(wallet => {
+        try {
+          const balanceBigInt = BigInt(wallet.balance || '0');
+          return balanceBigInt >= thresholdBigInt;
+        } catch (error) {
+          console.error(`解析钱包余额失败 ${wallet.address}:`, error);
+          return false;
+        }
+      });
+
+      // 按余额降序排列
+      walletsToCollect.sort((a, b) => {
+        try {
+          const balanceA = BigInt(a.balance || '0');
+          const balanceB = BigInt(b.balance || '0');
+          if (balanceA > balanceB) return -1;
+          if (balanceA < balanceB) return 1;
+          return 0;
+        } catch (error) {
+          return 0;
+        }
+      });
+
+      console.log(walletsToCollect, "需要归集的钱包")
+      console.log(threshold, "归集threshold")
+      return walletsToCollect;
     } catch (error) {
       console.error('获取需要归集的钱包失败:', error);
       return [];
@@ -167,7 +193,7 @@ export class WalletService {
   public async getUserPrivateKey(userId: string): Promise<string | null> {
     try {
       const wallet = await UserWallet.findOne({ userId, isActive: true });
-      
+
       if (!wallet) {
         return null;
       }
@@ -186,11 +212,11 @@ export class WalletService {
    */
   public async getPrivateKeyByAddress(address: string): Promise<string | null> {
     try {
-      const wallet = await UserWallet.findOne({ 
-        address: address.toLowerCase(), 
-        isActive: true 
+      const wallet = await UserWallet.findOne({
+        address: address.toLowerCase(),
+        isActive: true
       });
-      
+
       if (!wallet) {
         return null;
       }
@@ -208,10 +234,10 @@ export class WalletService {
    */
   public async getAllActiveWalletAddresses(): Promise<string[]> {
     try {
-      const wallets = await UserWallet.find({ 
-        isActive: true 
+      const wallets = await UserWallet.find({
+        isActive: true
       }).select('address');
-      
+
       return wallets.map(wallet => wallet.address);
     } catch (error) {
       console.error('获取所有活跃钱包地址失败:', error);
@@ -253,15 +279,12 @@ export class WalletService {
       const [
         totalWallets,
         activeWallets,
-        walletsNeedingCollection,
+        allActiveWallets,
         balanceAggregation,
       ] = await Promise.all([
         UserWallet.countDocuments(),
         UserWallet.countDocuments({ isActive: true }),
-        UserWallet.countDocuments({ 
-          isActive: true, 
-          balance: { $gte: config.collection.threshold } 
-        }),
+        UserWallet.find({ isActive: true }).select('balance'),
         UserWallet.aggregate([
           { $match: { isActive: true } },
           { 
@@ -274,6 +297,17 @@ export class WalletService {
           }
         ]),
       ]);
+
+      // 在应用层计算需要归集的钱包数量（避免字符串比较问题）
+      const thresholdBigInt = BigInt(config.collection.threshold);
+      const walletsNeedingCollection = allActiveWallets.filter(wallet => {
+        try {
+          const balanceBigInt = BigInt(wallet.balance || '0');
+          return balanceBigInt >= thresholdBigInt;
+        } catch (error) {
+          return false;
+        }
+      }).length;
 
       const totalBalance = balanceAggregation[0]?.totalBalance?.toString() || '0';
 
