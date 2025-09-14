@@ -65,6 +65,9 @@ export class ScannerService {
         await this.collectionService.startAutoCollection();
       }
 
+      // 启动回调重试处理器
+      this.webhookService.startCallbackRetryProcessor();
+
     } catch (error) {
       console.error('启动扫描服务失败:', error);
       throw error;

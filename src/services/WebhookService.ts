@@ -1,7 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 import crypto from 'crypto';
 import { config } from '../config';
-import { ITransfer, IWithdrawalRecord } from '../models';
+import { ITransfer, IWithdrawalRecord, PendingCallback, IPendingCallback } from '../models';
 
 export interface WebhookPayload {
   type: 'usdt_transfer';
@@ -315,6 +315,14 @@ export class WebhookService {
           });
 
           if (attempt === this.maxRetries) {
+            // 立即重试失败，添加到重试队列
+            await this.addPendingCallback(
+              'withdrawal',
+              withdrawal._id.toString(),
+              payload,
+              config.webhook.withdrawalCallbackUrl,
+              transferStatus
+            );
             return false;
           }
 
@@ -444,5 +452,257 @@ export class WebhookService {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 添加待重试的回调
+   * @param type 回调类型
+   * @param relatedId 关联记录ID
+   * @param payload 回调负载
+   * @param url 回调URL
+   * @param transferStatus 提现状态（可选）
+   */
+  public async addPendingCallback(
+    type: 'withdrawal' | 'deposit',
+    relatedId: string,
+    payload: any,
+    url: string,
+    transferStatus?: string
+  ): Promise<void> {
+    try {
+      // 检查是否已存在相同的待重试回调
+      const existingCallback = await PendingCallback.findOne({
+        type,
+        relatedId,
+        transferStatus,
+        status: 'pending'
+      });
+
+      if (existingCallback) {
+        console.log(`回调已存在于重试队列中: ${type} ${relatedId} ${transferStatus || ''}`);
+        return;
+      }
+
+      // 创建新的待重试回调
+      const pendingCallback = new PendingCallback({
+        type,
+        relatedId,
+        payload,
+        url,
+        transferStatus,
+        retryCount: 0,
+        maxRetries: 20, // 最多重试20次
+        nextRetryAt: new Date(Date.now() + 30 * 1000), // 30秒后重试
+        status: 'pending'
+      });
+
+      await pendingCallback.save();
+      console.log(`添加回调到重试队列: ${type} ${relatedId} ${transferStatus || ''}`);
+    } catch (error) {
+      console.error('添加待重试回调失败:', error);
+    }
+  }
+
+  /**
+   * 处理待重试的回调
+   */
+  public async processPendingCallbacks(): Promise<void> {
+    try {
+      const now = new Date();
+      
+      // 获取需要重试的回调，按relatedId去重
+      const pendingCallbacks = await PendingCallback.aggregate([
+        {
+          $match: {
+            status: 'pending',
+            nextRetryAt: { $lte: now }
+          }
+        },
+        {
+          $sort: { nextRetryAt: 1, createdAt: 1 } // 按重试时间和创建时间排序
+        },
+        {
+          $group: {
+            _id: {
+              type: '$type',
+              relatedId: '$relatedId',
+              transferStatus: '$transferStatus'
+            },
+            doc: { $first: '$$ROOT' } // 取每组的第一个文档
+          }
+        },
+        {
+          $replaceRoot: { newRoot: '$doc' } // 替换根文档
+        },
+        {
+          $limit: 50
+        }
+      ]);
+
+      if (pendingCallbacks.length === 0) {
+        return;
+      }
+
+      console.log(`处理 ${pendingCallbacks.length} 个待重试回调`);
+
+      for (const callbackData of pendingCallbacks) {
+        // 获取实际的 Mongoose 文档
+        const callback = await PendingCallback.findById(callbackData._id);
+        if (callback && callback.status === 'pending') {
+          await this.retryCallback(callback);
+          // 避免频繁请求
+          await this.sleep(500);
+        }
+      }
+    } catch (error) {
+      console.error('处理待重试回调失败:', error);
+    }
+  }
+
+  /**
+   * 重试单个回调
+   * @param callback 待重试的回调
+   */
+  private async retryCallback(callback: IPendingCallback): Promise<void> {
+    try {
+      let success = false;
+
+      // 根据回调类型发送请求
+      if (callback.type === 'withdrawal') {
+        success = await this.sendWithdrawalWebhookDirect(callback.payload, callback.url);
+      } else if (callback.type === 'deposit') {
+        success = await this.sendDepositWebhookDirect(callback.payload, callback.url);
+      }
+
+      if (success) {
+        // 成功，标记为完成
+        callback.status = 'completed';
+        await callback.save();
+        console.log(`回调重试成功: ${callback.type} ${callback.relatedId} ${callback.transferStatus || ''}`);
+        
+        // 删除或标记其他相同的待重试回调为已完成
+        await PendingCallback.updateMany(
+          {
+            type: callback.type,
+            relatedId: callback.relatedId,
+            transferStatus: callback.transferStatus,
+            status: 'pending',
+            _id: { $ne: callback._id }
+          },
+          {
+            status: 'completed',
+            lastError: '其他重试任务已成功'
+          }
+        );
+      } else {
+        // 失败，更新重试信息
+        callback.retryCount += 1;
+        
+        if (callback.retryCount >= callback.maxRetries) {
+          // 达到最大重试次数，标记为失败
+          callback.status = 'failed';
+          console.error(`回调重试达到最大次数，标记为失败: ${callback.type} ${callback.relatedId} ${callback.transferStatus || ''}`);
+        } else {
+          // 计算下次重试时间（每次间隔30秒）
+          callback.nextRetryAt = new Date(Date.now() + 30 * 1000);
+          console.log(`回调重试失败，将在30秒后重试 (${callback.retryCount}/${callback.maxRetries}): ${callback.type} ${callback.relatedId} ${callback.transferStatus || ''}`);
+        }
+        
+        await callback.save();
+      }
+    } catch (error) {
+      console.error(`重试回调时发生错误: ${callback.type} ${callback.relatedId}`, error);
+      
+      // 更新错误信息
+      callback.lastError = error.message;
+      callback.retryCount += 1;
+      
+      if (callback.retryCount >= callback.maxRetries) {
+        callback.status = 'failed';
+      } else {
+        callback.nextRetryAt = new Date(Date.now() + 30 * 1000);
+      }
+      
+      await callback.save();
+    }
+  }
+
+  /**
+   * 直接发送提现回调（用于重试）
+   * @param payload 回调负载
+   * @param url 回调URL
+   * @returns 是否成功
+   */
+  private async sendWithdrawalWebhookDirect(payload: any, url: string): Promise<boolean> {
+    try {
+      const response = await axios.post(url, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000,
+      });
+
+      return response.status >= 200 && response.status < 300;
+    } catch (error: any) {
+      console.error('直接发送提现回调失败:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * 直接发送充值回调（用于重试）
+   * @param payload 回调负载
+   * @param url 回调URL
+   * @returns 是否成功
+   */
+  private async sendDepositWebhookDirect(payload: any, url: string): Promise<boolean> {
+    try {
+      const response = await axios.post(url, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000,
+      });
+
+      return response.status >= 200 && response.status < 300;
+    } catch (error: any) {
+      console.error('直接发送充值回调失败:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * 启动回调重试处理器
+   */
+  public startCallbackRetryProcessor(): void {
+    console.log('启动回调重试处理器...');
+    
+    // 每30秒检查一次待重试的回调
+    setInterval(async () => {
+      await this.processPendingCallbacks();
+    }, 30000);
+  }
+
+  /**
+   * 清理旧的回调记录
+   * @param daysOld 保留天数
+   */
+  public async cleanupOldCallbacks(daysOld: number = 7): Promise<void> {
+    try {
+      const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
+      
+      const result = await PendingCallback.deleteMany({
+        $or: [
+          { status: 'completed', updatedAt: { $lt: cutoffDate } },
+          { status: 'failed', updatedAt: { $lt: cutoffDate } }
+        ]
+      });
+
+      if (result.deletedCount > 0) {
+        console.log(`清理了 ${result.deletedCount} 条旧的回调记录`);
+      }
+    } catch (error) {
+      console.error('清理旧回调记录失败:', error);
+    }
   }
 }
