@@ -110,8 +110,7 @@ export class WithdrawalService {
         console.error('发送提现申请回调失败:', error);
       }
 
-      // 立即处理提现
-      await this.processWithdrawal(withdrawalRecord);
+      // 提现请求将由后台处理器异步处理
 
       return {
         success: true,
@@ -412,49 +411,42 @@ export class WithdrawalService {
         completedWithdrawals,
         failedWithdrawals,
         pendingWithdrawals,
-        totalAmountAggregation,
+        completedRecords,
         todayWithdrawals,
-        todayAmountAggregation,
+        todayCompletedRecords,
       ] = await Promise.all([
         WithdrawalRecord.countDocuments(),
         WithdrawalRecord.countDocuments({ status: WithdrawalStatus.COMPLETED }),
         WithdrawalRecord.countDocuments({ status: WithdrawalStatus.FAILED }),
         WithdrawalRecord.countDocuments({ status: WithdrawalStatus.PENDING }),
-        WithdrawalRecord.aggregate([
-          { $match: { status: WithdrawalStatus.COMPLETED } },
-          {
-            $group: {
-              _id: null,
-              totalAmount: {
-                $sum: { $toLong: '$amount' }
-              }
-            }
-          }
-        ]),
+        WithdrawalRecord.find({ status: WithdrawalStatus.COMPLETED }).select('amount'),
         WithdrawalRecord.countDocuments({
           createdAt: { $gte: today },
           status: WithdrawalStatus.COMPLETED
         }),
-        WithdrawalRecord.aggregate([
-          {
-            $match: {
-              createdAt: { $gte: today },
-              status: WithdrawalStatus.COMPLETED
-            }
-          },
-          {
-            $group: {
-              _id: null,
-              totalAmount: {
-                $sum: { $toLong: '$amount' }
-              }
-            }
-          }
-        ]),
+        WithdrawalRecord.find({
+          createdAt: { $gte: today },
+          status: WithdrawalStatus.COMPLETED
+        }).select('amount'),
       ]);
 
-      const totalAmount = totalAmountAggregation[0]?.totalAmount?.toString() || '0';
-      const todayAmount = todayAmountAggregation[0]?.totalAmount?.toString() || '0';
+      // 计算总金额（使用BigInt避免溢出）
+      const totalAmount = completedRecords.reduce((sum, record) => {
+        try {
+          return (BigInt(sum) + BigInt(record.amount || '0')).toString();
+        } catch (error) {
+          return sum;
+        }
+      }, '0');
+
+      // 计算今日金额
+      const todayAmount = todayCompletedRecords.reduce((sum, record) => {
+        try {
+          return (BigInt(sum) + BigInt(record.amount || '0')).toString();
+        } catch (error) {
+          return sum;
+        }
+      }, '0');
 
       return {
         totalWithdrawals,
