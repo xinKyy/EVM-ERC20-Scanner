@@ -1,6 +1,7 @@
 import Web3 from 'web3';
 import { WithdrawalRecord, IWithdrawalRecord, WithdrawalStatus } from '../models';
 import { config } from '../config';
+import { WebhookService } from './WebhookService';
 
 // ERC20 Transfer函数的ABI
 const ERC20_TRANSFER_ABI = {
@@ -27,9 +28,11 @@ export class WithdrawalService {
   private web3: Web3;
   private usdtContract: any;
   private isProcessing: boolean = false;
+  private webhookService: WebhookService;
 
   constructor() {
     this.web3 = new Web3(config.bsc.rpcUrl);
+    this.webhookService = new WebhookService();
 
     // 创建USDT合约实例
     this.usdtContract = new this.web3.eth.Contract(
@@ -99,6 +102,13 @@ export class WithdrawalService {
 
       console.log(`创建提现请求: ${withdrawalRecord.amountFormatted} USDT 到 ${toAddress}`);
 
+      // 发送提现申请成功回调
+      try {
+        await this.webhookService.sendWithdrawalCallback(withdrawalRecord, '0'); // 0:提现申请成功
+      } catch (error) {
+        console.error('发送提现申请回调失败:', error);
+      }
+
       // 立即处理提现
       await this.processWithdrawal(withdrawalRecord);
 
@@ -148,6 +158,13 @@ export class WithdrawalService {
 
       console.log(`提现成功: ${withdrawalRecord.amountFormatted} USDT, 交易哈希: ${txHash}`);
 
+      // 发送提现成功回调
+      try {
+        await this.webhookService.sendWithdrawalCallback(withdrawalRecord, '1'); // 1:提现成功
+      } catch (error) {
+        console.error('发送提现成功回调失败:', error);
+      }
+
     } catch (error) {
       console.error('处理提现失败:', error);
 
@@ -156,6 +173,13 @@ export class WithdrawalService {
       withdrawalRecord.errorMessage = error.message;
       withdrawalRecord.retryCount += 1;
       await withdrawalRecord.save();
+
+      // 发送提现失败回调
+      try {
+        await this.webhookService.sendWithdrawalCallback(withdrawalRecord, '2'); // 2:转账失败
+      } catch (callbackError) {
+        console.error('发送提现失败回调失败:', callbackError);
+      }
 
       throw error;
     }

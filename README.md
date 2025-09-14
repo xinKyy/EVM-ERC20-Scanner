@@ -42,8 +42,12 @@ CONFIRMATION_BLOCKS=6
 SCAN_INTERVAL=3000
 
 # Webhook配置
-WEBHOOK_URL=http://localhost:8080/webhook/transfer
+WEBHOOK_URL=http://localhost:8080/webhook/transfer  # 传统转账通知（兼容性）
 WEBHOOK_SECRET=your_webhook_secret
+
+# 新的回调接口配置
+DEPOSIT_CALLBACK_URL=http://localhost:8080/server/wallet/deposit/callback    # 充值回调
+WITHDRAWAL_CALLBACK_URL=http://localhost:8080/server/wallet/transfer/callback # 提现回调
 
 # 服务配置
 PORT=3000
@@ -171,7 +175,50 @@ GET /api/transfer/blocks?fromBlock=34000000&toBlock=34000100
 
 ## Webhook通知
 
-当检测到USDT转账时，系统会向配置的Webhook URL发送通知：
+系统支持两种类型的回调通知：
+
+### 1. 充值回调（新版）
+
+当检测到用户钱包收到USDT转账时，系统会向 `DEPOSIT_CALLBACK_URL` 发送充值通知：
+
+```json
+{
+  "amount": "100.000000",
+  "currency": "USDT",
+  "fromAddress": "0x1234567890123456789012345678901234567890",
+  "hash": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+  "sign": "A1B2C3D4E5F6789012345678901234567890",
+  "timestamp": "1694620800000",
+  "toAddress": "0x0987654321098765432109876543210987654321",
+  "userId": "user_12345",
+  "walletType": "1"
+}
+```
+
+### 2. 提现回调（新版）
+
+提现操作的各个状态都会发送回调通知到 `WITHDRAWAL_CALLBACK_URL`：
+
+```json
+{
+  "address": "0x0987654321098765432109876543210987654321",
+  "amount": "50.000000",
+  "hash": "0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
+  "sign": "F1E2D3C4B5A6789012345678901234567890",
+  "timestamp": "1694620900000",
+  "transId": "64f8b2c3d4e5f6a7b8c9d0e1",
+  "transferStatus": "1"
+}
+```
+
+**transferStatus 说明：**
+- `0`: 提现申请成功
+- `1`: 提现成功
+- `2`: 转账失败
+
+### 3. 传统转账通知（兼容性）
+
+对于非用户钱包地址的转账，仍使用传统格式发送到 `WEBHOOK_URL`：
 
 ```json
 {
@@ -189,9 +236,51 @@ GET /api/transfer/blocks?fromBlock=34000000&toBlock=34000100
 }
 ```
 
-### Webhook签名验证
+### 签名验证
 
-如果设置了`WEBHOOK_SECRET`，请求头会包含`X-Signature`字段：
+#### 1. 新版回调签名验证（充值和提现回调）
+
+新版回调使用MD5签名，签名包含在请求体的 `sign` 字段中：
+
+```javascript
+const crypto = require('crypto');
+
+function verifyCallbackSignature(payload, secret) {
+  // 排除sign字段，按字母顺序排序参数
+  const params = Object.keys(payload)
+    .filter(key => key !== 'sign')
+    .sort()
+    .map(key => `${key}=${payload[key]}`)
+    .join('&');
+  
+  // 添加密钥
+  const signString = params + '&key=' + secret;
+  
+  // 生成MD5签名并转大写
+  const expectedSign = crypto.createHash('md5').update(signString).digest('hex').toUpperCase();
+  
+  return payload.sign === expectedSign;
+}
+
+// 使用示例
+const payload = {
+  amount: '100.000000',
+  currency: 'USDT',
+  fromAddress: '0x1234567890123456789012345678901234567890',
+  hash: '0xabcdef...',
+  timestamp: '1694620800000',
+  toAddress: '0x0987654321098765432109876543210987654321',
+  userId: 'user_12345',
+  walletType: '1',
+  sign: 'A1B2C3D4E5F6789012345678901234567890'
+};
+
+const isValid = verifyCallbackSignature(payload, 'your_webhook_secret');
+```
+
+#### 2. 传统签名验证（兼容性）
+
+传统转账通知使用HMAC-SHA256签名，签名在请求头的 `X-Signature` 字段中：
 
 ```javascript
 const crypto = require('crypto');

@@ -1,7 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 import crypto from 'crypto';
 import { config } from '../config';
-import { ITransfer } from '../models';
+import { ITransfer, IWithdrawalRecord } from '../models';
 
 export interface WebhookPayload {
   type: 'usdt_transfer';
@@ -15,6 +15,30 @@ export interface WebhookPayload {
     timestamp: string;
   };
   signature?: string;
+}
+
+// 新的充值回调接口
+export interface DepositCallbackPayload {
+  amount: string;
+  currency: string;
+  fromAddress: string;
+  hash: string;
+  sign: string;
+  timestamp: string;
+  toAddress: string;
+  userId: string;
+  walletType: string; // 1:ERC20
+}
+
+// 新的提现回调接口
+export interface WithdrawalCallbackPayload {
+  address: string;
+  amount: string;
+  hash: string;
+  sign: string;
+  timestamp: string;
+  transId: string;
+  transferStatus: string; // 0:提现申请成功，1:提现成功 2:转账失败
 }
 
 export class WebhookService {
@@ -220,6 +244,198 @@ export class WebhookService {
       console.error('Webhook连接测试失败:', error);
       return false;
     }
+  }
+
+  /**
+   * 发送充值回调通知
+   * @param transfer 转账记录
+   * @param userId 用户ID
+   * @returns 是否发送成功
+   */
+  public async sendDepositCallback(transfer: ITransfer, userId: string): Promise<boolean> {
+    try {
+      const payload = this.createDepositPayload(transfer, userId);
+      
+      for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+        try {
+          const response = await this.sendDepositWebhook(payload);
+
+          if (response.status >= 200 && response.status < 300) {
+            console.log(`充值回调发送成功: ${transfer.transactionHash}`);
+            return true;
+          } else {
+            console.warn(`充值回调响应状态异常 ${response.status}: ${transfer.transactionHash}`);
+          }
+        } catch (error: any) {
+          console.error(`充值回调发送失败 (尝试 ${attempt}/${this.maxRetries}):`, {
+            transactionHash: transfer.transactionHash,
+            error: error.message,
+          });
+
+          if (attempt === this.maxRetries) {
+            return false;
+          }
+
+          // 指数退避重试
+          await this.sleep(Math.pow(2, attempt) * 1000);
+        }
+      }
+
+      return false;
+    } catch (error) {
+      console.error('创建充值回调负载失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 发送提现回调通知
+   * @param withdrawal 提现记录
+   * @param transferStatus 提现状态 0:提现申请成功，1:提现成功 2:转账失败
+   * @returns 是否发送成功
+   */
+  public async sendWithdrawalCallback(withdrawal: IWithdrawalRecord, transferStatus: string): Promise<boolean> {
+    try {
+      const payload = this.createWithdrawalPayload(withdrawal, transferStatus);
+      
+      for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+        try {
+          const response = await this.sendWithdrawalWebhook(payload);
+
+          if (response.status >= 200 && response.status < 300) {
+            console.log(`提现回调发送成功: ${withdrawal._id}`);
+            return true;
+          } else {
+            console.warn(`提现回调响应状态异常 ${response.status}: ${withdrawal._id}`);
+          }
+        } catch (error: any) {
+          console.error(`提现回调发送失败 (尝试 ${attempt}/${this.maxRetries}):`, {
+            withdrawalId: withdrawal._id,
+            error: error.message,
+          });
+
+          if (attempt === this.maxRetries) {
+            return false;
+          }
+
+          // 指数退避重试
+          await this.sleep(Math.pow(2, attempt) * 1000);
+        }
+      }
+
+      return false;
+    } catch (error) {
+      console.error('创建提现回调负载失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 创建充值回调负载
+   * @param transfer 转账记录
+   * @param userId 用户ID
+   * @returns 充值回调负载
+   */
+  private createDepositPayload(transfer: ITransfer, userId: string): DepositCallbackPayload {
+    const timestamp = Date.now().toString();
+    
+    const payload: DepositCallbackPayload = {
+      amount: transfer.amountFormatted,
+      currency: 'USDT',
+      fromAddress: transfer.fromAddress,
+      hash: transfer.transactionHash,
+      timestamp,
+      toAddress: transfer.toAddress,
+      userId,
+      walletType: '1', // 1:ERC20
+      sign: '', // 将在下面生成
+    };
+
+    // 生成签名
+    payload.sign = this.generateCallbackSignature(payload);
+
+    return payload;
+  }
+
+  /**
+   * 创建提现回调负载
+   * @param withdrawal 提现记录
+   * @param transferStatus 提现状态
+   * @returns 提现回调负载
+   */
+  private createWithdrawalPayload(withdrawal: IWithdrawalRecord, transferStatus: string): WithdrawalCallbackPayload {
+    const timestamp = Date.now().toString();
+    
+    const payload: WithdrawalCallbackPayload = {
+      address: withdrawal.toAddress,
+      amount: withdrawal.amountFormatted,
+      hash: withdrawal.transactionHash || '',
+      timestamp,
+      transId: withdrawal._id.toString(),
+      transferStatus,
+      sign: '', // 将在下面生成
+    };
+
+    // 生成签名
+    payload.sign = this.generateCallbackSignature(payload);
+
+    return payload;
+  }
+
+  /**
+   * 发送充值Webhook请求
+   * @param payload 负载数据
+   * @returns 响应结果
+   */
+  private async sendDepositWebhook(payload: DepositCallbackPayload): Promise<AxiosResponse> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'BSC-USDT-Scanner/1.0',
+    };
+
+    return await axios.post(config.webhook.depositCallbackUrl, payload, {
+      headers,
+      timeout: this.timeout,
+      validateStatus: (status) => status < 500, // 不要对4xx错误抛异常
+    });
+  }
+
+  /**
+   * 发送提现Webhook请求
+   * @param payload 负载数据
+   * @returns 响应结果
+   */
+  private async sendWithdrawalWebhook(payload: WithdrawalCallbackPayload): Promise<AxiosResponse> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'BSC-USDT-Scanner/1.0',
+    };
+
+    return await axios.post(config.webhook.withdrawalCallbackUrl, payload, {
+      headers,
+      timeout: this.timeout,
+      validateStatus: (status) => status < 500, // 不要对4xx错误抛异常
+    });
+  }
+
+  /**
+   * 生成回调签名
+   * @param payload 负载数据
+   * @returns 签名
+   */
+  private generateCallbackSignature(payload: any): string {
+    // 排除sign字段，按字母顺序排序参数
+    const params = Object.keys(payload)
+      .filter(key => key !== 'sign')
+      .sort()
+      .map(key => `${key}=${payload[key]}`)
+      .join('&');
+    
+    // 添加密钥
+    const signString = params + '&key=' + this.webhookSecret;
+    
+    // 生成MD5签名并转大写
+    return crypto.createHash('md5').update(signString).digest('hex').toUpperCase();
   }
 
   /**

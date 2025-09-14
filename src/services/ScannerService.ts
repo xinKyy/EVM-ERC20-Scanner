@@ -348,7 +348,18 @@ export class ScannerService {
           const successfulIds: string[] = [];
           
           for (const transfer of transfers) {
-            const success = await this.webhookService.sendTransferNotification(transfer);
+            let success = false;
+            
+            // 检查是否是用户钱包地址，如果是则发送新的充值回调
+            const userWallet = await this.walletService.getUserWalletByAddress(transfer.toAddress);
+            
+            if (userWallet) {
+              // 发送新的充值回调
+              success = await this.webhookService.sendDepositCallback(transfer, userWallet.userId);
+            } else {
+              // 发送传统的转账通知（兼容性）
+              success = await this.webhookService.sendTransferNotification(transfer);
+            }
             
             if (success) {
               successfulIds.push(transfer._id.toString());

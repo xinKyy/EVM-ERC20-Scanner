@@ -445,7 +445,7 @@ export class CollectionService {
   private validateCollectionConfig(): boolean {
     const { collection, gasFee } = config.wallets;
 
-    if (!collection.address || !collection.privateKey) {
+    if (!collection.address) {
       console.error('归集钱包配置不完整');
       return false;
     }

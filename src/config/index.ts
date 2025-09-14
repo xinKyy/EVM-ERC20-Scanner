@@ -21,6 +21,8 @@ export interface Config {
   webhook: {
     url: string;
     secret: string;
+    depositCallbackUrl: string;
+    withdrawalCallbackUrl: string;
   };
   server: {
     port: number;
@@ -28,7 +30,6 @@ export interface Config {
   wallets: {
     collection: {
       address: string;
-      privateKey: string;
     };
     gasFee: {
       address: string;
@@ -65,6 +66,8 @@ export const config: Config = {
   webhook: {
     url: process.env.WEBHOOK_URL || 'http://localhost:8080/webhook/transfer',
     secret: process.env.WEBHOOK_SECRET || 'your_webhook_secret',
+    depositCallbackUrl: process.env.DEPOSIT_CALLBACK_URL || 'http://localhost:8080/server/wallet/deposit/callback',
+    withdrawalCallbackUrl: process.env.WITHDRAWAL_CALLBACK_URL || 'http://localhost:8080/server/wallet/transfer/callback',
   },
   server: {
     port: parseInt(process.env.PORT || '3000'),
@@ -72,7 +75,6 @@ export const config: Config = {
   wallets: {
     collection: {
       address: process.env.COLLECTION_WALLET_ADDRESS || '',
-      privateKey: process.env.COLLECTION_WALLET_PRIVATE_KEY || '',
     },
     gasFee: {
       address: process.env.GAS_FEE_WALLET_ADDRESS || '',
