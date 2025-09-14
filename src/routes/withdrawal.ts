@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { WithdrawalController } from '../controllers/WithdrawalController';
+import { withdrawalService } from './scanner';
 
 const router = Router();
-const withdrawalController = new WithdrawalController();
+const withdrawalController = new WithdrawalController(withdrawalService);
 
 // 创建提现请求
 router.post('/create', withdrawalController.createWithdrawal);

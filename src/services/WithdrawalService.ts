@@ -29,6 +29,7 @@ export class WithdrawalService {
   private usdtContract: any;
   private isProcessing: boolean = false;
   private webhookService: WebhookService;
+  private processorStarted: boolean = false;
 
   constructor() {
     this.web3 = new Web3(config.bsc.rpcUrl);
@@ -486,6 +487,11 @@ export class WithdrawalService {
    * 启动提现处理服务
    */
   public async startWithdrawalProcessor(): Promise<void> {
+    if (this.processorStarted) {
+      console.log('提现处理服务已在运行中');
+      return;
+    }
+
     console.log('启动提现处理服务...');
 
     // 每10秒检查一次待处理的提现
@@ -495,6 +501,7 @@ export class WithdrawalService {
       }
     }, 10000);
 
+    this.processorStarted = true;
     console.log('提现处理服务已启动');
   }
 

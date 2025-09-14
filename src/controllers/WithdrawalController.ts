@@ -6,8 +6,8 @@ export class WithdrawalController {
   private withdrawalService: WithdrawalService;
   private web3: Web3;
 
-  constructor() {
-    this.withdrawalService = new WithdrawalService();
+  constructor(withdrawalService: WithdrawalService) {
+    this.withdrawalService = withdrawalService;
     this.web3 = new Web3();
   }
 
