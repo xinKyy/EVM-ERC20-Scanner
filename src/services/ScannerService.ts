@@ -38,7 +38,7 @@ export class ScannerService {
 
     try {
       console.log('启动BSC USDT转账扫描服务...');
-      
+
       // 检查区块链连接
       const isConnected = await this.blockchainService.checkConnection();
       if (!isConnected) {
@@ -76,9 +76,9 @@ export class ScannerService {
    */
   public async stopScanning(): Promise<void> {
     console.log('正在停止扫描服务...');
-    
+
     this.isScanning = false;
-    
+
     if (this.scanInterval) {
       clearInterval(this.scanInterval);
       this.scanInterval = null;
@@ -86,7 +86,7 @@ export class ScannerService {
 
     // 更新扫描状态
     await this.updateScanState(false);
-    
+
     console.log('扫描服务已停止');
   }
 
@@ -96,7 +96,7 @@ export class ScannerService {
   private async initializeScanState(): Promise<void> {
     try {
       let scanState = await ScanState.findOne();
-      
+
       if (!scanState) {
         // 创建初始扫描状态
         scanState = new ScanState({
@@ -110,7 +110,7 @@ export class ScannerService {
 
       // 标记正在扫描
       await this.updateScanState(true);
-      
+
     } catch (error) {
       console.error('初始化扫描状态失败:', error);
       throw error;
@@ -148,7 +148,7 @@ export class ScannerService {
         await this.scanNewBlocks();
       } catch (error) {
         console.error('扫描区块失败:', error);
-        
+
         // 连接失败时尝试重连
         if (error.message.includes('connection') || error.message.includes('network')) {
           try {
@@ -182,7 +182,7 @@ export class ScannerService {
       // 获取最新区块号
       const latestBlock = await this.blockchainService.getLatestBlockNumber();
       const fromBlock = scanState.lastScannedBlock + 1;
-      
+
       // 确保不会扫描太远未来的区块（避免确认机制问题）
       const toBlock = Math.min(
         latestBlock - config.scanner.confirmationBlocks,
@@ -198,16 +198,16 @@ export class ScannerService {
 
       // 扫描Transfer事件
       const events = await this.blockchainService.scanTransferEvents(fromBlock, toBlock);
-      
+
       if (events.length > 0) {
         console.log(`发现 ${events.length} 个Transfer事件`);
-        
+
         // 过滤出目标地址的转账
         const targetEvents = await this.filterTargetEvents(events);
-        
+
         if (targetEvents.length > 0) {
           console.log(`其中 ${targetEvents.length} 个转账到已订阅地址`);
-          
+
           // 保存到数据库
           await this.transferService.batchSaveTransferEvents(
             targetEvents,
@@ -235,29 +235,29 @@ export class ScannerService {
     try {
       // 获取所有to地址
       const toAddresses = [...new Set(events.map(event => event.toAddress))];
-      
+
       // 同时检查订阅地址和用户钱包地址
       const [subscribedAddresses, userWalletAddresses] = await Promise.all([
         this.addressService.getSubscribedAddresses(toAddresses),
         this.getUserWalletAddresses(toAddresses),
       ]);
-      
+
       // 合并两个地址集合
       const allTargetAddresses = new Set([
         ...subscribedAddresses,
         ...userWalletAddresses,
       ]);
-      
+
       // 过滤出目标事件
       const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
-      
+
       // 更新用户钱包余额
       if (targetEvents.length > 0) {
         await this.updateUserWalletBalances(targetEvents);
       }
-      
+
       return targetEvents;
-      
+
     } catch (error) {
       console.error('过滤目标事件失败:', error);
       return [];
@@ -271,7 +271,7 @@ export class ScannerService {
     try {
       const activeWalletAddresses = await this.walletService.getAllActiveWalletAddresses();
       const addressSet = new Set(activeWalletAddresses);
-      
+
       // 只返回在检查列表中的地址
       return new Set(addresses.filter(addr => addressSet.has(addr)));
     } catch (error) {
@@ -287,20 +287,20 @@ export class ScannerService {
     try {
       for (const event of events) {
         const wallet = await this.walletService.getUserWalletByAddress(event.toAddress);
-        
+
         if (wallet) {
           // 计算新余额
           const currentBalance = BigInt(wallet.balance || '0');
           const receivedAmount = BigInt(event.amount);
           const newBalance = currentBalance + receivedAmount;
-          
+
           // 更新钱包余额
           await this.walletService.updateWalletBalance(
             event.toAddress,
             newBalance.toString(),
             event.amount
           );
-          
+
           console.log(`更新用户 ${wallet.userId} 钱包余额: +${this.blockchainService.formatUSDTAmount(event.amount)} USDT`);
         }
       }
@@ -341,34 +341,34 @@ export class ScannerService {
       try {
         // 获取需要发送Webhook的Transfer
         const transfers = await this.transferService.getTransfersForWebhook(50);
-        
+
         if (transfers.length > 0) {
           console.log(`开始发送 ${transfers.length} 个Webhook通知`);
-          
+
           const successfulIds: string[] = [];
-          
+
           for (const transfer of transfers) {
             let success = false;
-            
+
             // 检查是否是用户钱包地址，如果是则发送新的充值回调
             const userWallet = await this.walletService.getUserWalletByAddress(transfer.toAddress);
-            
+
             if (userWallet) {
               // 发送新的充值回调
               success = await this.webhookService.sendDepositCallback(transfer, userWallet.userId);
             } else {
               // 发送传统的转账通知（兼容性）
-              success = await this.webhookService.sendTransferNotification(transfer);
+              // success = await this.webhookService.sendTransferNotification(transfer);
             }
-            
+
             if (success) {
               successfulIds.push(transfer._id.toString());
             }
-            
+
             // 避免频繁请求
             await new Promise(resolve => setTimeout(resolve, 200));
           }
-          
+
           // 标记成功发送的Webhook
           if (successfulIds.length > 0) {
             await this.transferService.markWebhookSent(successfulIds);
@@ -390,16 +390,16 @@ export class ScannerService {
   public async rescanMissingBlocks(fromBlock: number, toBlock: number): Promise<void> {
     try {
       console.log(`开始重扫漏块: ${fromBlock} - ${toBlock}`);
-      
+
       // 检查这个范围内是否有已存在的Transfer记录
       const existingTransfers = await this.transferService.getTransfersByBlockRange(fromBlock, toBlock);
       const existingBlocks = new Set(existingTransfers.map(t => t.blockNumber));
-      
+
       // 分批扫描以避免RPC限制
       const batchSize = 50;
       for (let start = fromBlock; start <= toBlock; start += batchSize) {
         const end = Math.min(start + batchSize - 1, toBlock);
-        
+
         // 跳过已有数据的区块
         const blocksToScan = [];
         for (let block = start; block <= end; block++) {
@@ -407,29 +407,29 @@ export class ScannerService {
             blocksToScan.push(block);
           }
         }
-        
+
         if (blocksToScan.length === 0) continue;
-        
+
         console.log(`重扫区块批次: ${blocksToScan[0]} - ${blocksToScan[blocksToScan.length - 1]}`);
-        
+
         const events = await this.blockchainService.scanTransferEvents(
           blocksToScan[0],
           blocksToScan[blocksToScan.length - 1]
         );
-        
+
         const targetEvents = await this.filterTargetEvents(events);
-        
+
         if (targetEvents.length > 0) {
           await this.transferService.batchSaveTransferEvents(
             targetEvents,
             (amount) => this.blockchainService.formatUSDTAmount(amount)
           );
         }
-        
+
         // 添加延迟避免RPC限流
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      
+
       console.log(`漏块重扫完成: ${fromBlock} - ${toBlock}`);
     } catch (error) {
       console.error('漏块重扫失败:', error);
@@ -497,7 +497,7 @@ export class ScannerService {
   }> {
     try {
       console.log('开始手动扫描...');
-      
+
       const scanState = await ScanState.findOne();
       if (!scanState) {
         throw new Error('找不到扫描状态');
