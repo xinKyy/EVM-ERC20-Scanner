@@ -88,15 +88,35 @@ MONGODB_URI=mongodb://username:password@localhost:27017
 MONGODB_DATABASE=spk-dev
 ```
 
-### 4. 编译并启动服务
+### 4. 启动服务
 
+#### 开发模式
 ```bash
-# 开发模式
 npm run dev
+```
 
-# 生产模式
+#### 生产模式（前台运行）
+```bash
 npm run build
 npm start
+```
+
+#### 生产模式（后台运行 - 推荐）
+```bash
+# 使用PM2后台运行
+./scripts/pm2-start.sh
+
+# 查看运行状态
+pm2 status
+
+# 查看日志
+pm2 logs bsc-scanner
+```
+
+#### 传统启动方式
+```bash
+# 使用启动脚本
+./scripts/start.sh
 ```
 
 ## API接口
@@ -396,20 +416,61 @@ EXPOSE 3000
 CMD ["npm", "start"]
 ```
 
-### PM2部署
+### PM2部署（推荐）
 
-```json
-{
-  "name": "bsc-scanner",
-  "script": "dist/index.js",
-  "instances": 1,
-  "env": {
-    "NODE_ENV": "production"
-  },
-  "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
-  "error_file": "logs/error.log",
-  "out_file": "logs/out.log"
-}
+项目已配置好PM2，可以轻松在后台运行：
+
+#### 快速启动
+```bash
+# 使用PM2启动脚本（推荐）
+./scripts/pm2-start.sh
+
+# 或使用npm命令
+npm run deploy
+```
+
+#### 手动PM2命令
+```bash
+# 编译项目
+npm run build
+
+# 启动PM2进程
+pm2 start ecosystem.config.js
+
+# 查看状态
+pm2 status
+
+# 查看日志
+pm2 logs bsc-scanner
+
+# 重启服务
+pm2 restart bsc-scanner
+
+# 停止服务
+pm2 stop bsc-scanner
+
+# 删除服务
+pm2 delete bsc-scanner
+```
+
+#### PM2配置说明
+- **进程名称**: `bsc-scanner`
+- **应用日志**: `./logs/scanner.log`
+- **错误日志**: `./logs/scanner-error.log`
+- **自动重启**: 启用
+- **内存限制**: 1GB
+- **环境变量**: 支持 `.env` 文件
+
+#### 日志管理
+```bash
+# 实时查看日志
+pm2 logs bsc-scanner --lines 100
+
+# 清空日志
+pm2 flush
+
+# 日志轮转（需要安装pm2-logrotate）
+pm2 install pm2-logrotate
 ```
 
 ## 故障排除

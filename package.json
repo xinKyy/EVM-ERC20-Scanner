@@ -11,7 +11,15 @@
     "setup": "./scripts/start.sh",
     "dev:start": "./scripts/start.sh dev",
     "lint": "echo 'Linting not configured'",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop bsc-scanner",
+    "pm2:restart": "pm2 restart bsc-scanner",
+    "pm2:delete": "pm2 delete bsc-scanner",
+    "pm2:logs": "pm2 logs bsc-scanner",
+    "pm2:status": "pm2 status",
+    "pm2:monit": "pm2 monit",
+    "deploy": "npm run build && npm run pm2:start"
   },
   "dependencies": {
     "web3": "^4.0.0",
