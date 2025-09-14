@@ -27,11 +27,12 @@ fi
 
 # 检查MongoDB连接
 echo "🔍 检查MongoDB连接..."
-MONGODB_URI=${MONGODB_URI:-"mongodb://localhost:27017/bsc-scanner"}
+MONGODB_URI=${MONGODB_URI:-"mongodb://localhost:27017"}
+MONGODB_DATABASE=${MONGODB_DATABASE:-"spk-dev"}
 
 # 尝试连接MongoDB
 if command -v mongosh >/dev/null 2>&1; then
-    mongosh --eval "db.runCommand('ping')" "$MONGODB_URI" >/dev/null 2>&1
+    mongosh --eval "db.runCommand('ping')" "$MONGODB_URI/$MONGODB_DATABASE" >/dev/null 2>&1
     if [ $? -eq 0 ]; then
         echo "✅ MongoDB连接正常"
     else

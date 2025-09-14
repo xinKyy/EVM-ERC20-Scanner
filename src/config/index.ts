@@ -12,6 +12,7 @@ export interface Config {
   };
   mongodb: {
     uri: string;
+    database: string;
   };
   scanner: {
     startBlockNumber: number;
@@ -56,7 +57,8 @@ export const config: Config = {
     contractAddress: process.env.USDT_CONTRACT_ADDRESS || '0x55d398326f99059fF775485246999027B3197955',
   },
   mongodb: {
-    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/bsc-scanner',
+    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017',
+    database: process.env.MONGODB_DATABASE || 'spk-dev',
   },
   scanner: {
     startBlockNumber: parseInt(process.env.START_BLOCK_NUMBER || '34000000'),

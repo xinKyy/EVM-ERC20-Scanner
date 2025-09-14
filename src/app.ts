@@ -110,7 +110,7 @@ export class App {
         console.log(`🔧 配置信息:`);
         console.log(`   - BSC RPC: ${config.bsc.rpcUrl}`);
         console.log(`   - USDT合约: ${config.usdt.contractAddress}`);
-        console.log(`   - MongoDB: ${config.mongodb.uri}`);
+        console.log(`   - MongoDB: ${config.mongodb.uri}/${config.mongodb.database}`);
         console.log(`   - Webhook: ${config.webhook.url}`);
         console.log(`   - 起始区块: ${config.scanner.startBlockNumber}`);
         console.log(`   - 确认区块数: ${config.scanner.confirmationBlocks}`);

@@ -7,6 +7,32 @@ export class DatabaseConnection {
 
   private constructor() {}
 
+  /**
+   * 构建MongoDB URI
+   * @returns 完整的MongoDB连接字符串
+   */
+  private buildMongoUri(): string {
+    const baseUri = config.mongodb.uri;
+    const database = config.mongodb.database;
+
+    // 如果URI已经包含数据库名，则直接使用
+    if (baseUri.includes('mongodb://') && baseUri.split('/').length > 3) {
+      return baseUri;
+    }
+    
+    // 如果URI是MongoDB Atlas格式（包含查询参数）
+    if (baseUri.includes('?')) {
+      const [uriPart, queryPart] = baseUri.split('?');
+      // 确保不会有双斜杠
+      const cleanUriPart = uriPart.endsWith('/') ? uriPart.slice(0, -1) : uriPart;
+      return `${cleanUriPart}/${database}?${queryPart}`;
+    }
+    
+    // 标准格式：添加数据库名
+    const cleanBaseUri = baseUri.endsWith('/') ? baseUri.slice(0, -1) : baseUri;
+    return `${cleanBaseUri}/${database}`;
+  }
+
   public static getInstance(): DatabaseConnection {
     if (!DatabaseConnection.instance) {
       DatabaseConnection.instance = new DatabaseConnection();
@@ -21,14 +47,17 @@ export class DatabaseConnection {
     }
 
     try {
-      await mongoose.connect(config.mongodb.uri, {
+      // 构建完整的MongoDB URI
+      const mongoUri = this.buildMongoUri();
+      
+      await mongoose.connect(mongoUri, {
         maxPoolSize: 10,
         serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 45000,
       });
 
       this.isConnected = true;
-      console.log('MongoDB连接成功');
+      console.log(`MongoDB连接成功 - 数据库: ${config.mongodb.database}`);
 
       mongoose.connection.on('error', (error) => {
         console.error('MongoDB连接错误:', error);

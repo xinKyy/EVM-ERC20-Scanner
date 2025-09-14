@@ -34,7 +34,8 @@ BSC_WS_URL=wss://bsc-ws-node.nariox.org:443
 USDT_CONTRACT_ADDRESS=0x55d398326f99059fF775485246999027B3197955
 
 # MongoDB配置
-MONGODB_URI=mongodb://localhost:27017/bsc-scanner
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DATABASE=spk-dev
 
 # 扫描配置
 START_BLOCK_NUMBER=34000000
@@ -66,6 +67,25 @@ docker run -d --name mongodb -p 27017:27017 mongo:latest
 
 # 或使用本地MongoDB服务
 sudo systemctl start mongod
+```
+
+**MongoDB配置说明：**
+- `MONGODB_URI`: MongoDB连接地址（不包含数据库名）
+- `MONGODB_DATABASE`: 数据库名称，默认为 `spk-dev`
+
+**支持的URI格式：**
+```bash
+# 本地MongoDB
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DATABASE=spk-dev
+
+# MongoDB Atlas
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net
+MONGODB_DATABASE=spk-dev
+
+# 带认证的MongoDB
+MONGODB_URI=mongodb://username:password@localhost:27017
+MONGODB_DATABASE=spk-dev
 ```
 
 ### 4. 编译并启动服务
