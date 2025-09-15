@@ -379,7 +379,7 @@ export class WebhookService {
       amount: withdrawal.amountFormatted,
       hash: withdrawal.transactionHash || '',
       timestamp,
-      transId: withdrawal._id.toString(),
+      transId: withdrawal.transId || withdrawal._id.toString(), // 优先使用外部transId，否则使用内部ID
       transferStatus,
       sign: '', // 将在下面生成
     };

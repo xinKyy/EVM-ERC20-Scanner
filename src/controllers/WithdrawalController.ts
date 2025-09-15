@@ -16,7 +16,7 @@ export class WithdrawalController {
    */
   public createWithdrawal = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { toAddress, amount, userId } = req.body;
+      const { toAddress, amount, userId, transId } = req.body;
       const requestedBy = req.ip || 'unknown';
 
       // 验证参数
@@ -67,7 +67,8 @@ export class WithdrawalController {
         toAddress,
         amountWei,
         requestedBy,
-        userId
+        userId,
+        transId
       );
 
       if (result.success) {
@@ -76,6 +77,7 @@ export class WithdrawalController {
           message: result.message,
           data: {
             withdrawalId: result.withdrawalRecord?._id,
+            transId: result.withdrawalRecord?.transId,
             toAddress,
             amount: result.withdrawalRecord?.amountFormatted,
             status: result.withdrawalRecord?.status,

@@ -48,13 +48,15 @@ export class WithdrawalService {
    * @param amount 提现金额 (wei)
    * @param requestedBy 请求者标识
    * @param userId 用户ID (可选)
+   * @param transId 外部交易ID (可选)
    * @returns 提现记录
    */
   public async createWithdrawal(
     toAddress: string,
     amount: string,
     requestedBy: string,
-    userId?: string
+    userId?: string,
+    transId?: string
   ): Promise<{
     success: boolean;
     message: string;
@@ -90,6 +92,7 @@ export class WithdrawalService {
       // 创建提现记录
       const withdrawalRecord = new WithdrawalRecord({
         userId,
+        transId,
         toAddress: toAddress.toLowerCase(),
         amount,
         amountFormatted: this.formatUSDTAmount(amount),

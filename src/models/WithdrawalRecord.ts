@@ -9,6 +9,7 @@ export enum WithdrawalStatus {
 
 export interface IWithdrawalRecord extends Document {
   userId?: string; // 可选，如果是管理员操作可能没有userId
+  transId?: string; // 外部交易ID，由请求者提供
   toAddress: string; // 提现目标地址
   amount: string; // 提现数量 (wei)
   amountFormatted: string; // 格式化的提现数量
@@ -28,6 +29,10 @@ const WithdrawalRecordSchema: Schema = new Schema({
   userId: {
     type: String,
     index: true,
+  },
+  transId: {
+    type: String,
+    index: true, // 添加索引以便查询
   },
   toAddress: {
     type: String,
