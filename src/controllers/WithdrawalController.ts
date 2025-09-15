@@ -19,6 +19,8 @@ export class WithdrawalController {
       const { toAddress, amount, userId, transId } = req.body;
       const requestedBy = req.ip || 'unknown';
 
+      console.log("****提现请求****", { toAddress, amount, userId, transId });
+
       // 验证参数
       if (!toAddress || !amount) {
         res.status(400).json({
@@ -48,7 +50,7 @@ export class WithdrawalController {
         } else {
           amountWei = amount.toString();
         }
-        
+
         const amountBigInt = BigInt(amountWei);
         if (amountBigInt <= 0) {
           throw new Error('金额必须大于0');
