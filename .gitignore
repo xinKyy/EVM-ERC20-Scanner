@@ -18,6 +18,7 @@ coverage
 
 .env
 .env.dev
+.env.pro
 
 # Editor directories and files
 .vscode/*
