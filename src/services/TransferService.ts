@@ -34,6 +34,7 @@ export class TransferService {
         status: TransferStatus.PENDING,
         confirmationCount: 0,
         webhookSent: false,
+        walletBalanceUpdated: false,
       });
 
       const savedTransfer = await transfer.save();
@@ -305,6 +306,39 @@ export class TransferService {
     } catch (error) {
       console.error('根据区块范围获取Transfer失败:', error);
       return [];
+    }
+  }
+
+  /**
+   * 根据交易哈希获取Transfer记录
+   * @param transactionHash 交易哈希
+   * @returns Transfer记录
+   */
+  public async getTransferByHash(transactionHash: string): Promise<ITransfer | null> {
+    try {
+      return await Transfer.findOne({ transactionHash });
+    } catch (error) {
+      console.error('根据交易哈希获取Transfer失败:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 标记钱包余额已更新
+   * @param transferId Transfer记录ID
+   * @returns 是否更新成功
+   */
+  public async markWalletBalanceUpdated(transferId: string): Promise<boolean> {
+    try {
+      const result = await Transfer.updateOne(
+        { _id: transferId },
+        { walletBalanceUpdated: true }
+      );
+
+      return result.modifiedCount > 0;
+    } catch (error) {
+      console.error('标记钱包余额已更新失败:', error);
+      return false;
     }
   }
 }

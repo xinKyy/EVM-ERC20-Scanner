@@ -219,9 +219,19 @@ export class ScannerService {
         }
       }
 
-      // 更新扫描状态
+      // 🔧 修复：先更新扫描状态，再处理用户钱包余额
+      // 这样即使钱包余额更新失败，也不会重复扫描同一区块
       await this.updateScanState(true, toBlock);
       this.lastHealthCheck = new Date();
+
+      // 处理用户钱包余额更新（放在扫描状态更新之后）
+      if (events.length > 0) {
+        const targetEvents = await this.filterTargetEvents(events);
+        if (targetEvents.length > 0) {
+          // 这里只更新钱包余额，不重复保存Transfer记录
+          await this.updateUserWalletBalances(targetEvents);
+        }
+      }
 
     } catch (error) {
       console.error('扫描新区块失败:', error);
@@ -253,11 +263,6 @@ export class ScannerService {
 
       // 过滤出目标事件
       const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
-
-      // 更新用户钱包余额
-      if (targetEvents.length > 0) {
-        await this.updateUserWalletBalances(targetEvents);
-      }
 
       return targetEvents;
 
@@ -292,17 +297,29 @@ export class ScannerService {
         const wallet = await this.walletService.getUserWalletByAddress(event.toAddress);
 
         if (wallet) {
+          // 检查是否已经处理过这个交易（防重复）
+          const existingTransfer = await this.transferService.getTransferByHash(event.transactionHash);
+          if (existingTransfer && existingTransfer.walletBalanceUpdated) {
+            console.log(`交易 ${event.transactionHash} 的钱包余额已更新，跳过`);
+            continue;
+          }
+
           // 计算新余额
           const currentBalance = BigInt(wallet.balance || '0');
           const receivedAmount = BigInt(event.amount);
           const newBalance = currentBalance + receivedAmount;
 
           // 更新钱包余额
-          await this.walletService.updateWalletBalance(
+          const updateSuccess = await this.walletService.updateWalletBalance(
             event.toAddress,
             newBalance.toString(),
             event.amount
           );
+
+          // 标记该交易的钱包余额已更新
+          if (updateSuccess && existingTransfer) {
+            await this.transferService.markWalletBalanceUpdated(existingTransfer._id.toString());
+          }
 
           console.log(`更新用户 ${wallet.userId} 钱包余额: +${this.blockchainService.formatUSDTAmount(event.amount)} USDT`);
         }

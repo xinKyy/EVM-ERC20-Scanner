@@ -17,6 +17,7 @@ export interface ITransfer extends Document {
   confirmationCount: number;
   webhookSent: boolean;
   webhookSentAt?: Date;
+  walletBalanceUpdated: boolean; // 标记是否已更新用户钱包余额
   createdAt: Date;
   updatedAt: Date;
 }
@@ -70,6 +71,11 @@ const TransferSchema: Schema = new Schema({
   },
   webhookSentAt: {
     type: Date,
+  },
+  walletBalanceUpdated: {
+    type: Boolean,
+    default: false,
+    index: true,
   },
 }, {
   timestamps: true,
