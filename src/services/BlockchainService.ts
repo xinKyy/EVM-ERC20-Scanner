@@ -110,20 +110,64 @@ export class BlockchainService {
         topics: [this.transferEventSignature],
       });
 
+      // 🚀 批量并发解析Transfer事件
       const events: TransferEvent[] = [];
+      
+      if (logs.length === 0) {
+        console.log(`扫描完成，未发现Transfer事件`);
+        return events;
+      }
 
-      for (const log of logs) {
-        try {
-          const parsedEvent = this.parseTransferEvent(log as EventLog, web3);
-          if (parsedEvent) {
-            events.push(parsedEvent);
+      // 对于大量日志，分批并发处理避免内存压力
+      const batchSize = 1000; // 每批处理1000个日志
+      const concurrency = Math.min(10, Math.ceil(logs.length / 100)); // 动态并发数
+      
+      console.log(`开始并发解析 ${logs.length} 个日志，批次大小: ${batchSize}, 并发数: ${concurrency}`);
+
+      for (let i = 0; i < logs.length; i += batchSize) {
+        const batch = logs.slice(i, i + batchSize);
+        
+        // 将批次进一步分割为并发块
+        const chunkSize = Math.ceil(batch.length / concurrency);
+        const chunks = [];
+        
+        for (let j = 0; j < batch.length; j += chunkSize) {
+          chunks.push(batch.slice(j, j + chunkSize));
+        }
+
+        // 并发处理每个块
+        const chunkPromises = chunks.map(async (chunk, chunkIndex) => {
+          const chunkEvents: TransferEvent[] = [];
+          
+          for (const log of chunk) {
+            try {
+              const parsedEvent = this.parseTransferEvent(log as EventLog, web3);
+              if (parsedEvent) {
+                chunkEvents.push(parsedEvent);
+              }
+            } catch (error) {
+              console.error(`解析Transfer事件失败 (批次${Math.floor(i/batchSize) + 1}, 块${chunkIndex + 1}):`, error);
+            }
           }
-        } catch (error) {
-          console.error('解析Transfer事件失败:', error, log);
+          
+          return chunkEvents;
+        });
+
+        // 等待当前批次的所有块完成
+        const chunkResults = await Promise.all(chunkPromises);
+        
+        // 合并结果
+        chunkResults.forEach(chunkEvents => {
+          events.push(...chunkEvents);
+        });
+
+        // 如果有多个批次，添加小延迟避免CPU过载
+        if (logs.length > batchSize && i + batchSize < logs.length) {
+          await new Promise(resolve => setTimeout(resolve, 10));
         }
       }
 
-      console.log(`扫描完成，找到 ${events.length} 个Transfer事件`);
+      console.log(`扫描完成，找到 ${events.length} 个Transfer事件 (并发解析 ${logs.length} 个日志)`);
       return events;
     } catch (error) {
       console.error(`扫描区块 ${fromBlock}-${toBlock} 失败:`, error);
