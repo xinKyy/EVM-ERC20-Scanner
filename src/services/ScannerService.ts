@@ -202,6 +202,9 @@ export class ScannerService {
    * 扫描新区块
    */
   private async scanNewBlocks(): Promise<void> {
+    let fromBlock: number = 0;
+    let toBlock: number = 0;
+    
     try {
       // 获取当前扫描状态
       const scanState = await ScanState.findOne();
@@ -209,12 +212,16 @@ export class ScannerService {
         throw new Error('找不到扫描状态');
       }
 
+      console.log(`🔍 当前扫描状态: lastScannedBlock=${scanState.lastScannedBlock}, isScanning=${scanState.isScanning}, lastScanTime=${scanState.lastScanTime}`);
+
       // 获取最新区块号
       const latestBlock = await this.blockchainService.getLatestBlockNumber();
-      const fromBlock = scanState.lastScannedBlock + 1;
+      fromBlock = scanState.lastScannedBlock + 1;
+      
+      console.log(`🔍 计算扫描范围: fromBlock=${fromBlock} (lastScannedBlock + 1)`);
 
       // 确保不会扫描太远未来的区块（避免确认机制问题）
-      const toBlock = Math.min(
+      toBlock = Math.min(
         latestBlock - config.scanner.confirmationBlocks,
         fromBlock + 200 // 每次最多扫描200个区块（提高吞吐量）
       );
@@ -235,33 +242,49 @@ export class ScannerService {
         console.log(`发现 ${events.length} 个Transfer事件`);
 
         // 过滤出目标地址的转账
+        console.log(`🔍 开始过滤目标地址...`);
         targetEvents = await this.filterTargetEvents(events);
+        console.log(`🔍 过滤完成，找到 ${targetEvents.length} 个目标事件`);
 
         if (targetEvents.length > 0) {
           console.log(`其中 ${targetEvents.length} 个转账到已订阅地址`);
 
           // 保存到数据库
+          console.log(`🔍 开始保存Transfer事件到数据库...`);
           await this.transferService.batchSaveTransferEvents(
             targetEvents,
             (amount) => this.blockchainService.formatUSDTAmount(amount)
           );
+          console.log(`🔍 Transfer事件保存完成`);
         }
+      } else {
+        console.log(`🔍 未发现Transfer事件`);
       }
 
       // 🔧 修复：先更新扫描状态，再处理用户钱包余额
       // 这样即使钱包余额更新失败，也不会重复扫描同一区块
+      console.log(`🔍 准备更新扫描状态到区块 ${toBlock}...`);
       await this.updateScanState(true, toBlock);
+      console.log(`🔍 扫描状态更新完成`);
       this.lastHealthCheck = new Date();
 
       // 处理用户钱包余额更新（放在扫描状态更新之后）
       // 复用之前过滤的targetEvents，避免重复过滤
       if (targetEvents.length > 0) {
+        console.log(`🔍 开始更新用户钱包余额...`);
         // 这里只更新钱包余额，不重复保存Transfer记录
         await this.updateUserWalletBalances(targetEvents);
+        console.log(`🔍 用户钱包余额更新完成`);
       }
 
     } catch (error) {
-      console.error('扫描新区块失败:', error);
+      console.error('❌ 扫描新区块失败:', error);
+      console.error('❌ 错误详情:', {
+        message: error.message,
+        stack: error.stack,
+        fromBlock,
+        toBlock: toBlock || 'undefined'
+      });
       throw error;
     }
   }
