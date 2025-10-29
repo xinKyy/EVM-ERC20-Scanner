@@ -5,6 +5,7 @@ import { WebhookService } from './WebhookService';
 import { WalletService } from './WalletService';
 import { CollectionService } from './CollectionService';
 import { CacheService } from './CacheService';
+import { ServiceManager } from './ServiceManager';
 import { ScanState, IScanState } from '../models';
 import { config } from '../config';
 
@@ -25,6 +26,7 @@ export class ScannerService {
   private lastScanDuration: number = 0; // 记录上次扫描耗时
   private allWalletAddressesCache: Set<string> = new Set(); // 缓存所有钱包地址
   private lastWalletCacheUpdate: number = 0; // 上次更新缓存的时间
+  private pendingNewAddresses: Set<string> = new Set(); // 待添加到缓存的新地址
 
   constructor() {
     this.blockchainService = new BlockchainService();
@@ -34,6 +36,10 @@ export class ScannerService {
     this.walletService = new WalletService();
     this.collectionService = new CollectionService();
     this.cacheService = CacheService.getInstance();
+    
+    // 🚀 注册到全局服务管理器
+    const serviceManager = ServiceManager.getInstance();
+    serviceManager.setScannerService(this);
   }
 
   /**
@@ -447,26 +453,79 @@ export class ScannerService {
   }
 
   /**
-   * 获取用户钱包地址集合（使用缓存优化）
+   * 获取用户钱包地址集合（智能缓存优化）
    */
   private async getUserWalletAddresses(addresses: string[]): Promise<Set<string>> {
     try {
-      // 检查缓存是否需要更新（每5分钟更新一次）
+      // 检查缓存是否需要更新（每5分钟更新一次，或首次使用）
       const now = Date.now();
-      if (now - this.lastWalletCacheUpdate > 2 * 60 * 1000 || this.allWalletAddressesCache.size === 0) {
-        console.log(`🔄 更新钱包地址缓存...`);
+      const needFullUpdate = now - this.lastWalletCacheUpdate > 5 * 60 * 1000 || this.allWalletAddressesCache.size === 0;
+      
+      if (needFullUpdate) {
+        console.log(`🔄 全量更新钱包地址缓存...`);
         const activeWalletAddresses = await this.walletService.getAllActiveWalletAddresses();
         this.allWalletAddressesCache = new Set(activeWalletAddresses);
+        this.pendingNewAddresses.clear(); // 清空待处理列表
         this.lastWalletCacheUpdate = now;
-        console.log(`✅ 钱包地址缓存已更新，共 ${this.allWalletAddressesCache.size} 个地址`);
+        console.log(`✅ 钱包地址缓存已全量更新，共 ${this.allWalletAddressesCache.size} 个地址`);
+      }
+      
+      // 添加待处理的新地址到缓存
+      if (this.pendingNewAddresses.size > 0) {
+        console.log(`➕ 添加 ${this.pendingNewAddresses.size} 个新地址到缓存`);
+        this.pendingNewAddresses.forEach(addr => this.allWalletAddressesCache.add(addr));
+        this.pendingNewAddresses.clear();
+      }
+
+      // 🚀 智能检测：如果发现未缓存的地址，立即检查是否为新创建的钱包
+      const uncachedAddresses = addresses.filter(addr => !this.allWalletAddressesCache.has(addr));
+      if (uncachedAddresses.length > 0 && uncachedAddresses.length <= 50) { // 限制检查数量避免性能问题
+        console.log(`🔍 发现 ${uncachedAddresses.length} 个未缓存地址，检查是否为新钱包...`);
+        const newWalletAddresses = await this.walletService.getAllActiveWalletAddresses();
+        const newWalletSet = new Set(newWalletAddresses);
+        
+        let foundNewWallets = 0;
+        uncachedAddresses.forEach(addr => {
+          if (newWalletSet.has(addr)) {
+            this.allWalletAddressesCache.add(addr);
+            foundNewWallets++;
+          }
+        });
+        
+        if (foundNewWallets > 0) {
+          console.log(`✅ 发现并添加了 ${foundNewWallets} 个新钱包地址到缓存`);
+        }
       }
 
       // 只返回在检查列表中的地址
-      return new Set(addresses.filter(addr => this.allWalletAddressesCache.has(addr)));
+      const result = new Set(addresses.filter(addr => this.allWalletAddressesCache.has(addr)));
+      
+      if (result.size > 0) {
+        console.log(`🎯 找到 ${result.size} 个目标钱包地址`);
+      }
+      
+      return result;
     } catch (error) {
       console.error('获取用户钱包地址失败:', error);
       return new Set();
     }
+  }
+
+  /**
+   * 添加新钱包地址到缓存（供外部调用）
+   */
+  public addNewWalletAddress(address: string): void {
+    this.pendingNewAddresses.add(address.toLowerCase());
+    console.log(`📝 新钱包地址已加入待处理队列: ${address}`);
+  }
+
+  /**
+   * 移除钱包地址从缓存（供外部调用）
+   */
+  public removeWalletAddress(address: string): void {
+    this.allWalletAddressesCache.delete(address.toLowerCase());
+    this.pendingNewAddresses.delete(address.toLowerCase());
+    console.log(`🗑️ 钱包地址已从缓存中移除: ${address}`);
   }
 
   /**

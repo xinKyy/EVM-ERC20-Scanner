@@ -2,6 +2,7 @@ import Web3 from 'web3';
 import crypto from 'crypto';
 import { UserWallet, IUserWallet } from '../models';
 import { config } from '../config';
+import { ServiceManager } from './ServiceManager';
 
 export class WalletService {
   private web3: Web3;
@@ -53,6 +54,10 @@ export class WalletService {
       await userWallet.save();
 
       console.log(`为用户 ${userId} 创建新钱包地址: ${account.address}`);
+
+      // 🚀 通知扫描服务新钱包地址创建
+      const serviceManager = ServiceManager.getInstance();
+      serviceManager.notifyNewWalletAddress(account.address.toLowerCase());
 
       return {
         address: account.address.toLowerCase(),
