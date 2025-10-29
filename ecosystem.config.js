@@ -34,11 +34,11 @@ module.exports = {
       // 进程管理
       autorestart: true,
       watch: false,
-      max_memory_restart: '2G',
+      max_memory_restart: '3G',
 
       // 重启策略
       restart_delay: 4000,
-      max_restarts: 10,
+      max_restarts: 100,
       min_uptime: '10s',
 
       // 其他配置
