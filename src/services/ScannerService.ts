@@ -239,11 +239,11 @@ export class ScannerService {
       // 根据上次扫描耗时动态调整批次大小
       let batchSize = 50; // 默认50个区块
       if (this.lastScanDuration > 30000) { // 超过30秒
-        batchSize = 20; // 减少到20个区块
+        batchSize = 50; // 减少到20个区块
       } else if (this.lastScanDuration > 10000) { // 超过10秒
-        batchSize = 30; // 减少到30个区块
+        batchSize = 100; // 减少到30个区块
       } else if (this.lastScanDuration < 5000) { // 少于5秒
-        batchSize = 100; // 增加到100个区块
+        batchSize = 150; // 增加到100个区块
       }
 
       toBlock = Math.min(
@@ -410,7 +410,7 @@ export class ScannerService {
     }
 
     // 限制并发数量为6，避免数据库压力过大
-    const concurrency = 6;
+    const concurrency = 10;
     for (let i = 0; i < batches.length; i += concurrency) {
       const currentBatches = batches.slice(i, i + concurrency);
 
