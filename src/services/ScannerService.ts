@@ -419,12 +419,9 @@ export class ScannerService {
         console.log(`⚡ 处理第 ${batchNum} 批，地址数量: ${batch.length}`);
 
         try {
-          const [subscribedAddresses, userWalletAddresses] = await Promise.all([
-            this.addressService.getSubscribedAddresses(batch),
-            this.getUserWalletAddresses(batch),
-          ]);
+          const userWalletAddresses = await this.getUserWalletAddresses(batch);
 
-          return { subscribedAddresses, userWalletAddresses, batchNum };
+          return { userWalletAddresses, batchNum };
         } catch (error) {
           console.error(`❌ 第 ${batchNum} 批处理失败:`, error);
           return { subscribedAddresses: [], userWalletAddresses: new Set(), batchNum };
@@ -435,7 +432,6 @@ export class ScannerService {
 
       // 合并结果
       results.forEach(result => {
-        result.subscribedAddresses.forEach(addr => allTargetAddresses.add(addr));
         result.userWalletAddresses.forEach(addr => allTargetAddresses.add(addr));
         console.log(`✅ 第 ${result.batchNum} 批完成`);
       });
