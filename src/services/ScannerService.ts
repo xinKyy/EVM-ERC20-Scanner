@@ -36,7 +36,7 @@ export class ScannerService {
     this.walletService = new WalletService();
     this.collectionService = new CollectionService();
     this.cacheService = CacheService.getInstance();
-    
+
     // 🚀 注册到全局服务管理器
     const serviceManager = ServiceManager.getInstance();
     serviceManager.setScannerService(this);
@@ -245,13 +245,13 @@ export class ScannerService {
 
       // 确保不会扫描太远未来的区块（避免确认机制问题）
       // 根据上次扫描耗时动态调整批次大小
-      let batchSize = 100; // 默认50个区块
+      let batchSize = 200; // 默认50个区块
       if (this.lastScanDuration > 30000) { // 超过30秒
-        batchSize = 100; // 减少到20个区块
+        batchSize = 400; // 减少到20个区块
       } else if (this.lastScanDuration > 10000) { // 超过10秒
-        batchSize = 150; // 减少到30个区块
+        batchSize = 800; // 减少到30个区块
       } else if (this.lastScanDuration < 5000) { // 少于5秒
-        batchSize = 200; // 增加到100个区块
+        batchSize = 1000; // 增加到100个区块
       }
 
       toBlock = Math.min(
@@ -460,7 +460,7 @@ export class ScannerService {
       // 检查缓存是否需要更新（每5分钟更新一次，或首次使用）
       const now = Date.now();
       const needFullUpdate = now - this.lastWalletCacheUpdate > 5 * 60 * 1000 || this.allWalletAddressesCache.size === 0;
-      
+
       if (needFullUpdate) {
         console.log(`🔄 全量更新钱包地址缓存...`);
         const activeWalletAddresses = await this.walletService.getAllActiveWalletAddresses();
@@ -469,7 +469,7 @@ export class ScannerService {
         this.lastWalletCacheUpdate = now;
         console.log(`✅ 钱包地址缓存已全量更新，共 ${this.allWalletAddressesCache.size} 个地址`);
       }
-      
+
       // 添加待处理的新地址到缓存
       if (this.pendingNewAddresses.size > 0) {
         console.log(`➕ 添加 ${this.pendingNewAddresses.size} 个新地址到缓存`);
@@ -483,7 +483,7 @@ export class ScannerService {
         console.log(`🔍 发现 ${uncachedAddresses.length} 个未缓存地址，检查是否为新钱包...`);
         const newWalletAddresses = await this.walletService.getAllActiveWalletAddresses();
         const newWalletSet = new Set(newWalletAddresses);
-        
+
         let foundNewWallets = 0;
         uncachedAddresses.forEach(addr => {
           if (newWalletSet.has(addr)) {
@@ -491,7 +491,7 @@ export class ScannerService {
             foundNewWallets++;
           }
         });
-        
+
         if (foundNewWallets > 0) {
           console.log(`✅ 发现并添加了 ${foundNewWallets} 个新钱包地址到缓存`);
         }
@@ -499,11 +499,11 @@ export class ScannerService {
 
       // 只返回在检查列表中的地址
       const result = new Set(addresses.filter(addr => this.allWalletAddressesCache.has(addr)));
-      
+
       if (result.size > 0) {
         console.log(`🎯 找到 ${result.size} 个目标钱包地址`);
       }
-      
+
       return result;
     } catch (error) {
       console.error('获取用户钱包地址失败:', error);
