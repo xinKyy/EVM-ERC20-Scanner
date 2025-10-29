@@ -85,11 +85,14 @@ export class BlockchainService {
    * @returns 区块信息
    */
   public async getBlock(blockNumber: number) {
+    const web3 = this.getWeb3();
     try {
-      return await this.web3.eth.getBlock(blockNumber, true);
+      return await web3.eth.getBlock(blockNumber, true);
     } catch (error) {
       console.error(`获取区块 ${blockNumber} 信息失败:`, error);
       throw error;
+    } finally {
+      this.web3Pool.releaseConnection();
     }
   }
 
@@ -100,10 +103,11 @@ export class BlockchainService {
    * @returns Transfer事件列表
    */
   public async scanTransferEvents(fromBlock: number, toBlock: number): Promise<TransferEvent[]> {
+    const web3 = this.getWeb3();
     try {
       console.log(`开始扫描区块 ${fromBlock} 到 ${toBlock} 的USDT Transfer事件`);
 
-      const logs = await this.web3.eth.getPastLogs({
+      const logs = await web3.eth.getPastLogs({
         fromBlock: fromBlock,
         toBlock: toBlock,
         address: this.usdtContractAddress,
@@ -114,7 +118,7 @@ export class BlockchainService {
 
       for (const log of logs) {
         try {
-          const parsedEvent = this.parseTransferEvent(log as EventLog);
+          const parsedEvent = this.parseTransferEvent(log as EventLog, web3);
           if (parsedEvent) {
             events.push(parsedEvent);
           }
@@ -128,15 +132,18 @@ export class BlockchainService {
     } catch (error) {
       console.error(`扫描区块 ${fromBlock}-${toBlock} 失败:`, error);
       throw error;
+    } finally {
+      this.web3Pool.releaseConnection();
     }
   }
 
   /**
    * 解析Transfer事件日志
    * @param log 事件日志
+   * @param web3 Web3实例
    * @returns 解析后的Transfer事件
    */
-  private parseTransferEvent(log: EventLog): TransferEvent | null {
+  private parseTransferEvent(log: EventLog, web3: Web3): TransferEvent | null {
     try {
       // 验证日志结构
       if (!log.topics || log.topics.length !== 3 || !log.data) {
@@ -145,7 +152,7 @@ export class BlockchainService {
       }
 
       // 解码事件参数
-      const decoded = this.web3.eth.abi.decodeLog(
+      const decoded = web3.eth.abi.decodeLog(
         TRANSFER_EVENT_ABI.inputs,
         log.data,
         log.topics.slice(1) // 去除事件签名topic
@@ -172,12 +179,15 @@ export class BlockchainService {
    * @returns 格式化的USDT数量
    */
   public formatUSDTAmount(weiAmount: string): string {
+    const web3 = this.getWeb3();
     try {
-      const amount = this.web3.utils.fromWei(weiAmount, 'ether');
+      const amount = web3.utils.fromWei(weiAmount, 'ether');
       return parseFloat(amount).toFixed(6); // 保留6位小数
     } catch (error) {
       console.error('格式化USDT数量失败:', error);
       return '0.000000';
+    } finally {
+      this.web3Pool.releaseConnection();
     }
   }
 
@@ -187,11 +197,14 @@ export class BlockchainService {
    * @returns 交易详情
    */
   public async getTransaction(txHash: string) {
+    const web3 = this.getWeb3();
     try {
-      return await this.web3.eth.getTransaction(txHash);
+      return await web3.eth.getTransaction(txHash);
     } catch (error) {
       console.error(`获取交易 ${txHash} 详情失败:`, error);
       throw error;
+    } finally {
+      this.web3Pool.releaseConnection();
     }
   }
 
@@ -201,11 +214,14 @@ export class BlockchainService {
    * @returns 交易收据
    */
   public async getTransactionReceipt(txHash: string) {
+    const web3 = this.getWeb3();
     try {
-      return await this.web3.eth.getTransactionReceipt(txHash);
+      return await web3.eth.getTransactionReceipt(txHash);
     } catch (error) {
       console.error(`获取交易收据 ${txHash} 失败:`, error);
       throw error;
+    } finally {
+      this.web3Pool.releaseConnection();
     }
   }
 
@@ -215,7 +231,12 @@ export class BlockchainService {
    * @returns 是否有效
    */
   public isValidAddress(address: string): boolean {
-    return this.web3.utils.isAddress(address);
+    const web3 = this.getWeb3();
+    try {
+      return web3.utils.isAddress(address);
+    } finally {
+      this.web3Pool.releaseConnection();
+    }
   }
 
   /**
@@ -223,12 +244,15 @@ export class BlockchainService {
    * @returns 是否连接正常
    */
   public async checkConnection(): Promise<boolean> {
+    const web3 = this.getWeb3();
     try {
-      await this.web3.eth.getBlockNumber();
+      await web3.eth.getBlockNumber();
       return true;
     } catch (error) {
       console.error('区块链网络连接检查失败:', error);
       return false;
+    } finally {
+      this.web3Pool.releaseConnection();
     }
   }
 
@@ -241,11 +265,12 @@ export class BlockchainService {
     latestBlock: number;
     gasPrice: string;
   }> {
+    const web3 = this.getWeb3();
     try {
       const [networkId, latestBlock, gasPrice] = await Promise.all([
-        this.web3.eth.net.getId(),
-        this.web3.eth.getBlockNumber(),
-        this.web3.eth.getGasPrice(),
+        web3.eth.net.getId(),
+        web3.eth.getBlockNumber(),
+        web3.eth.getGasPrice(),
       ]);
 
       return {
@@ -256,6 +281,8 @@ export class BlockchainService {
     } catch (error) {
       console.error('获取网络信息失败:', error);
       throw error;
+    } finally {
+      this.web3Pool.releaseConnection();
     }
   }
 
@@ -288,11 +315,8 @@ export class BlockchainService {
    */
   public async reconnect(): Promise<void> {
     try {
-      // 创建新的Web3实例
-      this.web3 = new Web3(config.bsc.rpcUrl);
-      
-      // 测试连接
-      await this.web3.eth.getBlockNumber();
+      // 使用连接池重连
+      await this.web3Pool.reconnect();
       console.log('区块链网络重连成功');
     } catch (error) {
       console.error('区块链网络重连失败:', error);

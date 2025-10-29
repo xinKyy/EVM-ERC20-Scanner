@@ -56,9 +56,10 @@ export class DatabaseConnection {
         maxIdleTimeMS: 30000,      // 连接空闲时间
         serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 45000,
-        bufferMaxEntries: 0,       // 禁用mongoose缓冲
-        bufferCommands: false,     // 禁用命令缓冲
       });
+
+      // 禁用mongoose缓冲
+      mongoose.set('bufferCommands', false);
 
       this.isConnected = true;
       console.log(`MongoDB连接成功 - 数据库: ${config.mongodb.database}`);
