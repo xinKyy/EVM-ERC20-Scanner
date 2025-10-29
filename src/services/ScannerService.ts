@@ -249,9 +249,9 @@ export class ScannerService {
       if (this.lastScanDuration > 30000) { // 超过30秒
         batchSize = 200; // 减少到20个区块
       } else if (this.lastScanDuration > 10000) { // 超过10秒
-        batchSize = 400; // 减少到30个区块
+        batchSize = 300; // 减少到30个区块
       } else if (this.lastScanDuration < 5000) { // 少于5秒
-        batchSize = 600; // 增加到100个区块
+        batchSize = 400; // 增加到100个区块
       }
 
       toBlock = Math.min(
