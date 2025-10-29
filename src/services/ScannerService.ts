@@ -4,6 +4,7 @@ import { AddressService } from './AddressService';
 import { WebhookService } from './WebhookService';
 import { WalletService } from './WalletService';
 import { CollectionService } from './CollectionService';
+import { CacheService } from './CacheService';
 import { ScanState, IScanState } from '../models';
 import { config } from '../config';
 
@@ -14,8 +15,11 @@ export class ScannerService {
   private webhookService: WebhookService;
   private walletService: WalletService;
   private collectionService: CollectionService;
+  private cacheService: CacheService;
   private isScanning: boolean = false;
   private scanInterval: NodeJS.Timeout | null = null;
+  private confirmationInterval: NodeJS.Timeout | null = null;
+  private webhookInterval: NodeJS.Timeout | null = null;
   private lastHealthCheck: Date = new Date();
 
   constructor() {
@@ -25,6 +29,7 @@ export class ScannerService {
     this.webhookService = new WebhookService();
     this.walletService = new WalletService();
     this.collectionService = new CollectionService();
+    this.cacheService = CacheService.getInstance();
   }
 
   /**
@@ -82,10 +87,24 @@ export class ScannerService {
 
     this.isScanning = false;
 
+    // 清理所有定时器，防止内存泄漏
     if (this.scanInterval) {
       clearInterval(this.scanInterval);
       this.scanInterval = null;
     }
+
+    if (this.confirmationInterval) {
+      clearInterval(this.confirmationInterval);
+      this.confirmationInterval = null;
+    }
+
+    if (this.webhookInterval) {
+      clearInterval(this.webhookInterval);
+      this.webhookInterval = null;
+    }
+
+    // 清理缓存
+    this.cacheService.clear();
 
     // 更新扫描状态
     await this.updateScanState(false);
@@ -249,17 +268,28 @@ export class ScannerService {
       // 获取所有to地址
       const toAddresses = [...new Set(events.map(event => event.toAddress))];
 
-      // 同时检查订阅地址和用户钱包地址
-      const [subscribedAddresses, userWalletAddresses] = await Promise.all([
-        this.addressService.getSubscribedAddresses(toAddresses),
-        this.getUserWalletAddresses(toAddresses),
-      ]);
+      // 生成缓存键
+      const cacheKey = CacheService.generateAddressKey(toAddresses, 'target_addresses');
+      
+      // 尝试从缓存获取
+      let allTargetAddresses = this.cacheService.get(cacheKey);
+      
+      if (!allTargetAddresses) {
+        // 同时检查订阅地址和用户钱包地址
+        const [subscribedAddresses, userWalletAddresses] = await Promise.all([
+          this.addressService.getSubscribedAddresses(toAddresses),
+          this.getUserWalletAddresses(toAddresses),
+        ]);
 
-      // 合并两个地址集合
-      const allTargetAddresses = new Set([
-        ...subscribedAddresses,
-        ...userWalletAddresses,
-      ]);
+        // 合并两个地址集合
+        allTargetAddresses = new Set([
+          ...subscribedAddresses,
+          ...userWalletAddresses,
+        ]);
+
+        // 缓存结果（1分钟）
+        this.cacheService.set(cacheKey, allTargetAddresses, 60 * 1000);
+      }
 
       // 过滤出目标事件
       const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
@@ -348,7 +378,7 @@ export class ScannerService {
     };
 
     // 每30秒处理一次确认
-    setInterval(processConfirmations, 30000);
+    this.confirmationInterval = setInterval(processConfirmations, 30000);
   }
 
   /**
@@ -401,7 +431,7 @@ export class ScannerService {
     };
 
     // 每10秒处理一次Webhook
-    setInterval(processWebhooks, 10000);
+    this.webhookInterval = setInterval(processWebhooks, 10000);
   }
 
   /**

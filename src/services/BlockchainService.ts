@@ -1,6 +1,7 @@
 import Web3 from 'web3';
 import { config } from '../config';
 import { EventLog } from 'web3-types';
+import { Web3Pool } from './Web3Pool';
 
 // USDT Transfer事件的ABI
 const TRANSFER_EVENT_ABI = {
@@ -40,16 +41,25 @@ export interface TransferEvent {
 }
 
 export class BlockchainService {
-  private web3: Web3;
+  private web3Pool: Web3Pool;
   private usdtContractAddress: string;
   private transferEventSignature: string;
 
   constructor() {
-    this.web3 = new Web3(config.bsc.rpcUrl);
+    this.web3Pool = Web3Pool.getInstance();
     this.usdtContractAddress = config.usdt.contractAddress.toLowerCase();
     
     // Transfer事件签名: Transfer(address,address,uint256)
-    this.transferEventSignature = this.web3.eth.abi.encodeEventSignature(TRANSFER_EVENT_ABI);
+    const web3 = this.web3Pool.getWeb3();
+    this.transferEventSignature = web3.eth.abi.encodeEventSignature(TRANSFER_EVENT_ABI);
+    this.web3Pool.releaseConnection();
+  }
+
+  /**
+   * 获取Web3实例
+   */
+  private getWeb3(): Web3 {
+    return this.web3Pool.getWeb3();
   }
 
   /**
@@ -57,12 +67,15 @@ export class BlockchainService {
    * @returns 最新区块号
    */
   public async getLatestBlockNumber(): Promise<number> {
+    const web3 = this.getWeb3();
     try {
-      const latestBlock = await this.web3.eth.getBlockNumber();
+      const latestBlock = await web3.eth.getBlockNumber();
       return Number(latestBlock);
     } catch (error) {
       console.error('获取最新区块号失败:', error);
       throw error;
+    } finally {
+      this.web3Pool.releaseConnection();
     }
   }
 

@@ -51,9 +51,13 @@ export class DatabaseConnection {
       const mongoUri = this.buildMongoUri();
       
       await mongoose.connect(mongoUri, {
-        maxPoolSize: 10,
+        maxPoolSize: 50,           // 增加连接池大小
+        minPoolSize: 5,            // 设置最小连接数
+        maxIdleTimeMS: 30000,      // 连接空闲时间
         serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 45000,
+        bufferMaxEntries: 0,       // 禁用mongoose缓冲
+        bufferCommands: false,     // 禁用命令缓冲
       });
 
       this.isConnected = true;
