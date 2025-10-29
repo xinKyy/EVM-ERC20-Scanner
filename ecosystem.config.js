@@ -34,19 +34,11 @@ module.exports = {
       // 进程管理
       autorestart: true,
       watch: false,
-      max_memory_restart: '3G',        // 增加内存限制到4G
-
-      // Node.js 内存优化参数
-      node_args: [
-        '--max-old-space-size=2584',   // 设置V8最大堆内存为3.5G
-        '--optimize-for-size',         // 优化内存使用
-        '--expose-gc',                 // 启用手动垃圾回收
-        '--gc-interval=100'            // 更频繁的垃圾回收
-      ],
+      max_memory_restart: '2G',
 
       // 重启策略
       restart_delay: 4000,
-      max_restarts: 100,
+      max_restarts: 10,
       min_uptime: '10s',
 
       // 其他配置
