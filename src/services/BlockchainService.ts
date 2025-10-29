@@ -107,7 +107,7 @@ export class BlockchainService {
 
       // 🚀 优化1: 动态分片查询，避免单次查询过大
       const blockRange = toBlock - fromBlock + 1;
-      const maxBlocksPerQuery = 100; // 每次查询最多200个区块
+      const maxBlocksPerQuery = 51; // 每次查询最多200个区块
 
       if (blockRange <= maxBlocksPerQuery) {
         // 小范围直接查询
