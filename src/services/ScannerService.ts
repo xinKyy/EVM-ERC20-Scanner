@@ -349,17 +349,13 @@ export class ScannerService {
           const queryStart = Date.now();
 
           // 同时检查订阅地址和用户钱包地址
-          const [subscribedAddresses, userWalletAddresses] = await Promise.all([
-            this.addressService.getSubscribedAddresses(toAddresses),
-            this.getUserWalletAddresses(toAddresses),
-          ]);
+          const subscribedAddresses = await this.getUserWalletAddresses(toAddresses)
 
           console.log(`🔍 数据库查询完成，耗时 ${Date.now() - queryStart}ms`);
 
           // 合并两个地址集合
           allTargetAddresses = new Set([
-            ...subscribedAddresses,
-            ...userWalletAddresses,
+            ...subscribedAddresses
           ]);
 
           // 缓存结果（5分钟，延长缓存时间）
@@ -413,7 +409,7 @@ export class ScannerService {
       batches.push(batch);
     }
 
-    // 限制并发数量为3，避免数据库压力过大
+    // 限制并发数量为6，避免数据库压力过大
     const concurrency = 6;
     for (let i = 0; i < batches.length; i += concurrency) {
       const currentBatches = batches.slice(i, i + concurrency);
