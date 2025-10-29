@@ -34,7 +34,7 @@ module.exports = {
       // 进程管理
       autorestart: true,
       watch: false,
-      max_memory_restart: '1G',
+      max_memory_restart: '2G',
 
       // 重启策略
       restart_delay: 4000,
