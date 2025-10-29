@@ -74,8 +74,6 @@ export class BlockchainService {
     } catch (error) {
       console.error('获取最新区块号失败:', error);
       throw error;
-    } finally {
-      this.web3Pool.releaseConnection();
     }
   }
 
@@ -91,8 +89,6 @@ export class BlockchainService {
     } catch (error) {
       console.error(`获取区块 ${blockNumber} 信息失败:`, error);
       throw error;
-    } finally {
-      this.web3Pool.releaseConnection();
     }
   }
 
@@ -132,8 +128,6 @@ export class BlockchainService {
     } catch (error) {
       console.error(`扫描区块 ${fromBlock}-${toBlock} 失败:`, error);
       throw error;
-    } finally {
-      this.web3Pool.releaseConnection();
     }
   }
 
@@ -186,8 +180,6 @@ export class BlockchainService {
     } catch (error) {
       console.error('格式化USDT数量失败:', error);
       return '0.000000';
-    } finally {
-      this.web3Pool.releaseConnection();
     }
   }
 
@@ -203,8 +195,6 @@ export class BlockchainService {
     } catch (error) {
       console.error(`获取交易 ${txHash} 详情失败:`, error);
       throw error;
-    } finally {
-      this.web3Pool.releaseConnection();
     }
   }
 
@@ -220,8 +210,6 @@ export class BlockchainService {
     } catch (error) {
       console.error(`获取交易收据 ${txHash} 失败:`, error);
       throw error;
-    } finally {
-      this.web3Pool.releaseConnection();
     }
   }
 
@@ -232,11 +220,7 @@ export class BlockchainService {
    */
   public isValidAddress(address: string): boolean {
     const web3 = this.getWeb3();
-    try {
-      return web3.utils.isAddress(address);
-    } finally {
-      this.web3Pool.releaseConnection();
-    }
+    return web3.utils.isAddress(address);
   }
 
   /**
@@ -251,8 +235,6 @@ export class BlockchainService {
     } catch (error) {
       console.error('区块链网络连接检查失败:', error);
       return false;
-    } finally {
-      this.web3Pool.releaseConnection();
     }
   }
 
@@ -281,8 +263,6 @@ export class BlockchainService {
     } catch (error) {
       console.error('获取网络信息失败:', error);
       throw error;
-    } finally {
-      this.web3Pool.releaseConnection();
     }
   }
 

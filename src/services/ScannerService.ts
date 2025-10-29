@@ -208,7 +208,7 @@ export class ScannerService {
       // 确保不会扫描太远未来的区块（避免确认机制问题）
       const toBlock = Math.min(
         latestBlock - config.scanner.confirmationBlocks,
-        fromBlock + 100 // 每次最多扫描100个区块
+        fromBlock + 200 // 每次最多扫描200个区块（提高吞吐量）
       );
 
       if (fromBlock > toBlock) {
@@ -268,33 +268,51 @@ export class ScannerService {
       // 获取所有to地址
       const toAddresses = [...new Set(events.map(event => event.toAddress))];
 
-      // 生成缓存键
-      const cacheKey = CacheService.generateAddressKey(toAddresses, 'target_addresses');
-      
-      // 尝试从缓存获取
-      let allTargetAddresses = this.cacheService.get(cacheKey);
-      
-      if (!allTargetAddresses) {
-        // 同时检查订阅地址和用户钱包地址
+      // 只对大量地址使用缓存（减少小数据缓存开销）
+      if (toAddresses.length > 10) {
+        // 生成缓存键
+        const cacheKey = CacheService.generateAddressKey(toAddresses, 'target_addresses');
+        
+        // 尝试从缓存获取
+        let allTargetAddresses = this.cacheService.get(cacheKey);
+        
+        if (!allTargetAddresses) {
+          // 同时检查订阅地址和用户钱包地址
+          const [subscribedAddresses, userWalletAddresses] = await Promise.all([
+            this.addressService.getSubscribedAddresses(toAddresses),
+            this.getUserWalletAddresses(toAddresses),
+          ]);
+
+          // 合并两个地址集合
+          allTargetAddresses = new Set([
+            ...subscribedAddresses,
+            ...userWalletAddresses,
+          ]);
+
+          // 缓存结果（1分钟）
+          this.cacheService.set(cacheKey, allTargetAddresses, 60 * 1000);
+        }
+
+        // 过滤出目标事件
+        const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
+        return targetEvents;
+      } else {
+        // 小数据量直接查询，不使用缓存
         const [subscribedAddresses, userWalletAddresses] = await Promise.all([
           this.addressService.getSubscribedAddresses(toAddresses),
           this.getUserWalletAddresses(toAddresses),
         ]);
 
         // 合并两个地址集合
-        allTargetAddresses = new Set([
+        const allTargetAddresses = new Set([
           ...subscribedAddresses,
           ...userWalletAddresses,
         ]);
 
-        // 缓存结果（1分钟）
-        this.cacheService.set(cacheKey, allTargetAddresses, 60 * 1000);
+        // 过滤出目标事件
+        const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
+        return targetEvents;
       }
-
-      // 过滤出目标事件
-      const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
-
-      return targetEvents;
 
     } catch (error) {
       console.error('过滤目标事件失败:', error);

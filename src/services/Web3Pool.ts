@@ -27,18 +27,17 @@ export class Web3Pool {
   }
 
   /**
-   * 获取Web3实例
+   * 获取Web3实例（简化版，减少开销）
    */
   public getWeb3(): Web3 {
-    this.connectionCount++;
     return this.web3Instance;
   }
 
   /**
-   * 释放连接
+   * 释放连接（简化为空操作，减少开销）
    */
   public releaseConnection(): void {
-    this.connectionCount = Math.max(0, this.connectionCount - 1);
+    // 简化为空操作，减少性能开销
   }
 
   /**
