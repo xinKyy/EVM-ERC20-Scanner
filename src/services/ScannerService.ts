@@ -21,6 +21,8 @@ export class ScannerService {
   private confirmationInterval: NodeJS.Timeout | null = null;
   private webhookInterval: NodeJS.Timeout | null = null;
   private lastHealthCheck: Date = new Date();
+  private isScanningBlocks: boolean = false; // 添加扫描锁
+  private lastScanDuration: number = 0; // 记录上次扫描耗时
 
   constructor() {
     this.blockchainService = new BlockchainService();
@@ -174,6 +176,15 @@ export class ScannerService {
     const scanBlocks = async () => {
       if (!this.isScanning) return;
 
+      // 🔒 防止并发扫描
+      if (this.isScanningBlocks) {
+        console.log(`⏳ 上一次扫描仍在进行中，跳过本次扫描 (上次耗时: ${this.lastScanDuration}ms)`);
+        return;
+      }
+
+      this.isScanningBlocks = true;
+      const scanStartTime = Date.now();
+
       try {
         await this.scanNewBlocks();
       } catch (error) {
@@ -188,6 +199,10 @@ export class ScannerService {
             console.error('重连失败:', reconnectError);
           }
         }
+      } finally {
+        this.lastScanDuration = Date.now() - scanStartTime;
+        this.isScanningBlocks = false;
+        console.log(`📊 本次扫描耗时: ${this.lastScanDuration}ms`);
       }
     };
 
@@ -221,10 +236,22 @@ export class ScannerService {
       console.log(`🔍 计算扫描范围: fromBlock=${fromBlock} (lastScannedBlock + 1)`);
 
       // 确保不会扫描太远未来的区块（避免确认机制问题）
+      // 根据上次扫描耗时动态调整批次大小
+      let batchSize = 50; // 默认50个区块
+      if (this.lastScanDuration > 30000) { // 超过30秒
+        batchSize = 20; // 减少到20个区块
+      } else if (this.lastScanDuration > 10000) { // 超过10秒
+        batchSize = 30; // 减少到30个区块
+      } else if (this.lastScanDuration < 5000) { // 少于5秒
+        batchSize = 100; // 增加到100个区块
+      }
+      
       toBlock = Math.min(
         latestBlock - config.scanner.confirmationBlocks,
-        fromBlock + 200 // 每次最多扫描200个区块（提高吞吐量）
+        fromBlock + batchSize
       );
+      
+      console.log(`📊 动态批次大小: ${batchSize} 个区块 (基于上次耗时: ${this.lastScanDuration}ms)`);
 
       if (fromBlock > toBlock) {
         // 没有新区块需要扫描
@@ -295,9 +322,19 @@ export class ScannerService {
   private async filterTargetEvents(events: TransferEvent[]): Promise<TransferEvent[]> {
     if (events.length === 0) return [];
 
+    const filterStartTime = Date.now();
+    console.log(`🔍 开始过滤 ${events.length} 个事件...`);
+
     try {
-      // 获取所有to地址
+      // 获取所有to地址并去重
       const toAddresses = [...new Set(events.map(event => event.toAddress))];
+      console.log(`🔍 去重后有 ${toAddresses.length} 个唯一地址`);
+
+      // 🚀 快速路径：如果地址数量太多，分批处理
+      if (toAddresses.length > 1000) {
+        console.log(`⚡ 地址数量过多 (${toAddresses.length})，使用分批快速处理...`);
+        return await this.filterTargetEventsFast(events, toAddresses);
+      }
 
       // 只对大量地址使用缓存（减少小数据缓存开销）
       if (toAddresses.length > 10) {
@@ -308,11 +345,16 @@ export class ScannerService {
         let allTargetAddresses = this.cacheService.get(cacheKey);
         
         if (!allTargetAddresses) {
+          console.log(`🔍 缓存未命中，查询数据库...`);
+          const queryStart = Date.now();
+          
           // 同时检查订阅地址和用户钱包地址
           const [subscribedAddresses, userWalletAddresses] = await Promise.all([
             this.addressService.getSubscribedAddresses(toAddresses),
             this.getUserWalletAddresses(toAddresses),
           ]);
+
+          console.log(`🔍 数据库查询完成，耗时 ${Date.now() - queryStart}ms`);
 
           // 合并两个地址集合
           allTargetAddresses = new Set([
@@ -320,12 +362,15 @@ export class ScannerService {
             ...userWalletAddresses,
           ]);
 
-          // 缓存结果（1分钟）
-          this.cacheService.set(cacheKey, allTargetAddresses, 60 * 1000);
+          // 缓存结果（5分钟，延长缓存时间）
+          this.cacheService.set(cacheKey, allTargetAddresses, 5 * 60 * 1000);
+        } else {
+          console.log(`🔍 缓存命中！`);
         }
 
         // 过滤出目标事件
         const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
+        console.log(`🔍 过滤完成，耗时 ${Date.now() - filterStartTime}ms，找到 ${targetEvents.length} 个目标事件`);
         return targetEvents;
       } else {
         // 小数据量直接查询，不使用缓存
@@ -342,13 +387,69 @@ export class ScannerService {
 
         // 过滤出目标事件
         const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
+        console.log(`🔍 过滤完成，耗时 ${Date.now() - filterStartTime}ms，找到 ${targetEvents.length} 个目标事件`);
         return targetEvents;
       }
 
     } catch (error) {
-      console.error('过滤目标事件失败:', error);
+      console.error('❌ 过滤目标事件失败:', error);
       return [];
     }
+  }
+
+  /**
+   * 快速分批过滤大量地址
+   */
+  private async filterTargetEventsFast(events: TransferEvent[], toAddresses: string[]): Promise<TransferEvent[]> {
+    const batchSize = 500; // 每批500个地址
+    const allTargetAddresses = new Set<string>();
+    
+    console.log(`⚡ 快速分批处理 ${toAddresses.length} 个地址，每批 ${batchSize} 个`);
+    
+    // 并发处理多个批次
+    const batches = [];
+    for (let i = 0; i < toAddresses.length; i += batchSize) {
+      const batch = toAddresses.slice(i, i + batchSize);
+      batches.push(batch);
+    }
+    
+    // 限制并发数量为3，避免数据库压力过大
+    const concurrency = 3;
+    for (let i = 0; i < batches.length; i += concurrency) {
+      const currentBatches = batches.slice(i, i + concurrency);
+      
+      const batchPromises = currentBatches.map(async (batch, index) => {
+        const batchNum = i + index + 1;
+        console.log(`⚡ 处理第 ${batchNum} 批，地址数量: ${batch.length}`);
+        
+        try {
+          const [subscribedAddresses, userWalletAddresses] = await Promise.all([
+            this.addressService.getSubscribedAddresses(batch),
+            this.getUserWalletAddresses(batch),
+          ]);
+          
+          return { subscribedAddresses, userWalletAddresses, batchNum };
+        } catch (error) {
+          console.error(`❌ 第 ${batchNum} 批处理失败:`, error);
+          return { subscribedAddresses: [], userWalletAddresses: new Set(), batchNum };
+        }
+      });
+      
+      const results = await Promise.all(batchPromises);
+      
+      // 合并结果
+      results.forEach(result => {
+        result.subscribedAddresses.forEach(addr => allTargetAddresses.add(addr));
+        result.userWalletAddresses.forEach(addr => allTargetAddresses.add(addr));
+        console.log(`✅ 第 ${result.batchNum} 批完成`);
+      });
+    }
+    
+    console.log(`⚡ 快速处理完成，找到 ${allTargetAddresses.size} 个目标地址`);
+    
+    // 过滤出目标事件
+    const targetEvents = events.filter(event => allTargetAddresses.has(event.toAddress));
+    return targetEvents;
   }
 
   /**
