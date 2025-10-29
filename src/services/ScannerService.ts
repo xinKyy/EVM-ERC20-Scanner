@@ -247,11 +247,11 @@ export class ScannerService {
       // 根据上次扫描耗时动态调整批次大小
       let batchSize = 200; // 默认50个区块
       if (this.lastScanDuration > 30000) { // 超过30秒
-        batchSize = 400; // 减少到20个区块
+        batchSize = 200; // 减少到20个区块
       } else if (this.lastScanDuration > 10000) { // 超过10秒
-        batchSize = 800; // 减少到30个区块
+        batchSize = 400; // 减少到30个区块
       } else if (this.lastScanDuration < 5000) { // 少于5秒
-        batchSize = 1000; // 增加到100个区块
+        batchSize = 600; // 增加到100个区块
       }
 
       toBlock = Math.min(

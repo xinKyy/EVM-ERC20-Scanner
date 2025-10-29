@@ -48,7 +48,7 @@ export class BlockchainService {
   constructor() {
     this.web3Pool = Web3Pool.getInstance();
     this.usdtContractAddress = config.usdt.contractAddress.toLowerCase();
-    
+
     // Transfer事件签名: Transfer(address,address,uint256)
     const web3 = this.web3Pool.getWeb3();
     this.transferEventSignature = web3.eth.abi.encodeEventSignature(TRANSFER_EVENT_ABI);
@@ -101,14 +101,14 @@ export class BlockchainService {
   public async scanTransferEvents(fromBlock: number, toBlock: number): Promise<TransferEvent[]> {
     const web3 = this.getWeb3();
     const scanStartTime = Date.now();
-    
+
     try {
       console.log(`🔍 开始扫描区块 ${fromBlock} 到 ${toBlock} 的USDT Transfer事件`);
 
       // 🚀 优化1: 动态分片查询，避免单次查询过大
       const blockRange = toBlock - fromBlock + 1;
-      const maxBlocksPerQuery = 200; // 每次查询最多200个区块
-      
+      const maxBlocksPerQuery = 100; // 每次查询最多200个区块
+
       if (blockRange <= maxBlocksPerQuery) {
         // 小范围直接查询
         const logs = await this.getPastLogsWithRetry(web3, {
@@ -117,10 +117,10 @@ export class BlockchainService {
           address: this.usdtContractAddress,
           topics: [this.transferEventSignature],
         });
-        
+
         const queryTime = Date.now() - scanStartTime;
         console.log(`📊 RPC查询耗时: ${queryTime}ms (${blockRange}个区块, ${logs.length}个日志)`);
-        
+
         return await this.parseLogsInBatches(logs, web3);
       } else {
         // 大范围分片并发查询
@@ -142,26 +142,26 @@ export class BlockchainService {
         const startTime = Date.now();
         const logs = await web3.eth.getPastLogs(params);
         const duration = Date.now() - startTime;
-        
+
         if (attempt > 1) {
           console.log(`✅ RPC查询重试成功 (第${attempt}次尝试, 耗时${duration}ms)`);
         }
-        
+
         return logs;
       } catch (error: any) {
         console.warn(`⚠️ RPC查询失败 (第${attempt}次尝试):`, error.message);
-        
+
         if (attempt === maxRetries) {
           throw error;
         }
-        
+
         // 指数退避重试
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
         console.log(`⏳ ${delay}ms后重试...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
-    
+
     throw new Error('RPC查询重试次数已用完');
   }
 
@@ -169,31 +169,31 @@ export class BlockchainService {
    * 🚀 分片并发查询大范围区块
    */
   private async scanTransferEventsInChunks(
-    fromBlock: number, 
-    toBlock: number, 
-    chunkSize: number, 
+    fromBlock: number,
+    toBlock: number,
+    chunkSize: number,
     web3: Web3
   ): Promise<TransferEvent[]> {
     const chunks: Array<{from: number, to: number}> = [];
-    
+
     // 创建区块分片
     for (let start = fromBlock; start <= toBlock; start += chunkSize) {
       const end = Math.min(start + chunkSize - 1, toBlock);
       chunks.push({ from: start, to: end });
     }
-    
+
     console.log(`📦 分成 ${chunks.length} 个分片，每片最多 ${chunkSize} 个区块`);
-    
+
     // 🚀 并发查询分片 (限制并发数避免RPC过载)
     const maxConcurrency = 5; // 最多5个并发RPC查询
     const allEvents: TransferEvent[] = [];
-    
+
     for (let i = 0; i < chunks.length; i += maxConcurrency) {
       const currentChunks = chunks.slice(i, i + maxConcurrency);
-      
+
       const chunkPromises = currentChunks.map(async (chunk, index) => {
         const chunkStartTime = Date.now();
-        
+
         try {
           const logs = await this.getPastLogsWithRetry(web3, {
             fromBlock: chunk.from,
@@ -201,27 +201,27 @@ export class BlockchainService {
             address: this.usdtContractAddress,
             topics: [this.transferEventSignature],
           });
-          
+
           const queryTime = Date.now() - chunkStartTime;
           const blockCount = chunk.to - chunk.from + 1;
           console.log(`📊 分片${i + index + 1}查询完成: ${blockCount}个区块, ${logs.length}个日志, 耗时${queryTime}ms`);
-          
+
           return await this.parseLogsInBatches(logs, web3);
         } catch (error) {
           console.error(`❌ 分片${i + index + 1}查询失败 (区块${chunk.from}-${chunk.to}):`, error);
           return [];
         }
       });
-      
+
       const chunkResults = await Promise.all(chunkPromises);
       chunkResults.forEach(events => allEvents.push(...events));
-      
+
       // 分片间添加小延迟，避免RPC过载
       if (i + maxConcurrency < chunks.length) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     }
-    
+
     console.log(`🎯 分片查询完成，总共找到 ${allEvents.length} 个Transfer事件`);
     return allEvents;
   }
@@ -238,18 +238,18 @@ export class BlockchainService {
     const batchSize = 1000; // 每批处理1000个日志
     const concurrency = Math.min(10, Math.ceil(logs.length / 100)); // 动态并发数
     const events: TransferEvent[] = [];
-    
+
     if (logs.length > 500) {
       console.log(`🔄 开始并发解析 ${logs.length} 个日志，批次大小: ${batchSize}, 并发数: ${concurrency}`);
     }
 
     for (let i = 0; i < logs.length; i += batchSize) {
       const batch = logs.slice(i, i + batchSize);
-      
+
       // 将批次进一步分割为并发块
       const chunkSize = Math.ceil(batch.length / concurrency);
       const chunks = [];
-      
+
       for (let j = 0; j < batch.length; j += chunkSize) {
         chunks.push(batch.slice(j, j + chunkSize));
       }
@@ -257,7 +257,7 @@ export class BlockchainService {
       // 并发处理每个块
       const chunkPromises = chunks.map(async (chunk, chunkIndex) => {
         const chunkEvents: TransferEvent[] = [];
-        
+
         for (const log of chunk) {
           try {
             const parsedEvent = this.parseTransferEvent(log as EventLog, web3);
@@ -268,13 +268,13 @@ export class BlockchainService {
             console.error(`解析Transfer事件失败 (批次${Math.floor(i/batchSize) + 1}, 块${chunkIndex + 1}):`, error);
           }
         }
-        
+
         return chunkEvents;
       });
 
       // 等待当前批次的所有块完成
       const chunkResults = await Promise.all(chunkPromises);
-      
+
       // 合并结果
       chunkResults.forEach(chunkEvents => {
         events.push(...chunkEvents);
@@ -431,12 +431,12 @@ export class BlockchainService {
    */
   public async scanMultipleRanges(ranges: Array<{from: number, to: number}>): Promise<TransferEvent[]> {
     const allEvents: TransferEvent[] = [];
-    
+
     for (const range of ranges) {
       try {
         const events = await this.scanTransferEvents(range.from, range.to);
         allEvents.push(...events);
-        
+
         // 添加小延迟避免RPC限流
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
