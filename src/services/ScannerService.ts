@@ -23,6 +23,8 @@ export class ScannerService {
   private lastHealthCheck: Date = new Date();
   private isScanningBlocks: boolean = false; // 添加扫描锁
   private lastScanDuration: number = 0; // 记录上次扫描耗时
+  private allWalletAddressesCache: Set<string> = new Set(); // 缓存所有钱包地址
+  private lastWalletCacheUpdate: number = 0; // 上次更新缓存的时间
 
   constructor() {
     this.blockchainService = new BlockchainService();
@@ -445,15 +447,22 @@ export class ScannerService {
   }
 
   /**
-   * 获取用户钱包地址集合
+   * 获取用户钱包地址集合（使用缓存优化）
    */
   private async getUserWalletAddresses(addresses: string[]): Promise<Set<string>> {
     try {
-      const activeWalletAddresses = await this.walletService.getAllActiveWalletAddresses();
-      const addressSet = new Set(activeWalletAddresses);
+      // 检查缓存是否需要更新（每5分钟更新一次）
+      const now = Date.now();
+      if (now - this.lastWalletCacheUpdate > 2 * 60 * 1000 || this.allWalletAddressesCache.size === 0) {
+        console.log(`🔄 更新钱包地址缓存...`);
+        const activeWalletAddresses = await this.walletService.getAllActiveWalletAddresses();
+        this.allWalletAddressesCache = new Set(activeWalletAddresses);
+        this.lastWalletCacheUpdate = now;
+        console.log(`✅ 钱包地址缓存已更新，共 ${this.allWalletAddressesCache.size} 个地址`);
+      }
 
       // 只返回在检查列表中的地址
-      return new Set(addresses.filter(addr => addressSet.has(addr)));
+      return new Set(addresses.filter(addr => this.allWalletAddressesCache.has(addr)));
     } catch (error) {
       console.error('获取用户钱包地址失败:', error);
       return new Set();
